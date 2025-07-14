@@ -35,7 +35,7 @@ VECTOR_SEARCH_INDEX_NAME=event_vector_index
 3. Set up a vector search index on the `event_embeddings` collection with the following configuration:
    - Index name: `event_vector_index` (or whatever you specified in your env variables)
    - Field to index: `embedding`
-   - Dimension: 1536 (for OpenAI's text-embedding-3-large model)
+   - Dimension: 3072 (for OpenAI's text-embedding-3-large model)
    - Metric: cosine
 
 ### Installation
