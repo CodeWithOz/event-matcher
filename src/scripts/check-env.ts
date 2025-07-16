@@ -42,15 +42,27 @@ function checkEnvVariables() {
     }
   }
   
-  // Check Vector Search Index Name
-  const vectorSearchIndexName = process.env.VECTOR_SEARCH_INDEX_NAME;
-  if (!vectorSearchIndexName) {
-    console.log('ℹ️ VECTOR_SEARCH_INDEX_NAME is not set, will use default "event_vector_index"');
+  // Check Event Vector Search Index Name
+  const eventVectorSearchIndexName = process.env.EVENT_VECTOR_SEARCH_INDEX_NAME;
+  if (!eventVectorSearchIndexName) {
+    console.log('ℹ️ EVENT_VECTOR_SEARCH_INDEX_NAME is not set, will use default "event_vector_index"');
   } else {
-    if (vectorSearchIndexName.startsWith('VECTOR_SEARCH_INDEX_NAME=')) {
-      console.error('❌ VECTOR_SEARCH_INDEX_NAME has incorrect format. Remove "VECTOR_SEARCH_INDEX_NAME=" prefix');
+    if (eventVectorSearchIndexName.startsWith('EVENT_VECTOR_SEARCH_INDEX_NAME=')) {
+      console.error('❌ EVENT_VECTOR_SEARCH_INDEX_NAME has incorrect format. Remove "EVENT_VECTOR_SEARCH_INDEX_NAME=" prefix');
     } else {
-      console.log('✅ VECTOR_SEARCH_INDEX_NAME is set correctly');
+      console.log('✅ EVENT_VECTOR_SEARCH_INDEX_NAME is set correctly');
+    }
+  }
+  
+  // Check Course Vector Search Index Name
+  const courseVectorSearchIndexName = process.env.COURSE_VECTOR_SEARCH_INDEX_NAME;
+  if (!courseVectorSearchIndexName) {
+    console.log('ℹ️ COURSE_VECTOR_SEARCH_INDEX_NAME is not set, will use default "course_vector_index"');
+  } else {
+    if (courseVectorSearchIndexName.startsWith('COURSE_VECTOR_SEARCH_INDEX_NAME=')) {
+      console.error('❌ COURSE_VECTOR_SEARCH_INDEX_NAME has incorrect format. Remove "COURSE_VECTOR_SEARCH_INDEX_NAME=" prefix');
+    } else {
+      console.log('✅ COURSE_VECTOR_SEARCH_INDEX_NAME is set correctly');
     }
   }
   

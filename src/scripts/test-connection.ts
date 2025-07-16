@@ -48,7 +48,7 @@ async function testConnection() {
     // Check for vector search index if embeddings collection exists
     if (hasEmbeddingsCollection) {
       try {
-        const indexName = process.env.VECTOR_SEARCH_INDEX_NAME || 'event_vector_index';
+        const indexName = process.env.EVENT_VECTOR_SEARCH_INDEX_NAME || 'event_vector_index';
         if (!db) {
           throw new Error('Database connection not established');
         }

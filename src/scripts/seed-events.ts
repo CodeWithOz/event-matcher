@@ -110,7 +110,7 @@ async function seedEvents() {
         const vectorStore = await initializeVectorStore(
             collection,
             embeddings,
-            process.env.VECTOR_SEARCH_INDEX_NAME || 'event_vector_index'
+            process.env.EVENT_VECTOR_SEARCH_INDEX_NAME || 'event_vector_index'
         );
 
         // Create embeddings for all events

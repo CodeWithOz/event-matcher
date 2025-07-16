@@ -27,9 +27,9 @@ export const getOpenAIApiKey = (): string => {
 };
 
 /**
- * Get MongoDB Atlas vector search index name from environment variables
+ * Get MongoDB Atlas vector search index name for events from environment variables
  * or use default value
  */
 export const getVectorSearchIndexName = (): string => {
-  return process.env.VECTOR_SEARCH_INDEX_NAME || 'event_vector_index';
+  return process.env.EVENT_VECTOR_SEARCH_INDEX_NAME || 'event_vector_index';
 };
