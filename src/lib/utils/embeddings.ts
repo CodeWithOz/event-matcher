@@ -52,22 +52,38 @@ export const createEventEmbeddings = async (
 export const searchSimilarEvents = async (
     vectorStore: MongoDBAtlasVectorSearch,
     query: string,
-    limit: number = 3
+    scoreThreshold: number = 0.6, // 60% similarity threshold
+    limit: number = 20 // Higher limit to get more potential matches
 ) => {
-    const results = await vectorStore.similaritySearch(query, limit);
-
-    // Get the event IDs from the search results
-    const eventIds = results.map(result => result.metadata.eventId);
-
-    // Fetch the complete event documents from the database
-    const events = await Event.find({ _id: { $in: eventIds } });
-
-    // Sort the events to match the order of the search results
-    const sortedEvents = eventIds.map(id =>
-        events.find(
-            event => (event._id as mongoose.Types.ObjectId).toString() === id
-        )
+    // Use similaritySearchWithScore to get scores along with results
+    const resultsWithScores = await vectorStore.similaritySearchWithScore(
+        query,
+        limit
     );
+
+    // Filter results to only include those with 80% or higher similarity
+    const filteredResults = resultsWithScores.filter(
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        ([_result, score]) => score >= scoreThreshold
+    );
+
+    // Get the event IDs from the filtered search results
+    const eventIds = filteredResults.map(([result]) => result.metadata.eventId);
+
+    // Fetch the full event data from the database
+    const events = await Event.find({
+        _id: { $in: eventIds },
+    });
+
+    // Sort events to match the order of the search results
+    const sortedEvents = eventIds
+        .map(id =>
+            events.find(
+                event =>
+                    (event._id as mongoose.Types.ObjectId).toString() === id
+            )
+        )
+        .filter(event => event !== undefined) as IEvent[];
 
     return sortedEvents;
 };
@@ -147,17 +163,30 @@ export const createCourseEmbeddings = async (
  * Search for similar courses based on a query
  * @param vectorStore MongoDBAtlasVectorSearch instance
  * @param query Search query
+ * @param scoreThreshold Minimum similarity score threshold (0-1)
  * @param limit Maximum number of results to return
  * @returns Array of matching courses
  */
 export const searchSimilarCourses = async (
     vectorStore: MongoDBAtlasVectorSearch,
     query: string,
-    limit: number = 3
+    scoreThreshold: number = 0.6, // 60% similarity threshold
+    limit: number = 20 // Higher limit to get more potential matches
 ) => {
-    const results = await vectorStore.similaritySearch(query, limit);
+    // Use similaritySearchWithScore to get scores along with results
+    const resultsWithScores = await vectorStore.similaritySearchWithScore(
+        query,
+        limit
+    );
 
-    return results.map(result => {
+    // Filter results to only include those with 80% or higher similarity
+    const filteredResults = resultsWithScores.filter(
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        ([_result, score]) => score >= scoreThreshold
+    );
+
+    // Extract course metadata from filtered results
+    return filteredResults.map(([result]) => {
         const metadata = { ...result.metadata };
         return metadata as IBaseCourse;
     });
