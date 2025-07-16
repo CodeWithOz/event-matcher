@@ -73,6 +73,51 @@ export const searchSimilarEvents = async (
 };
 
 /**
+ * Generate structured text for course embeddings
+ * Creates a formatted multiline string with course properties in sections
+ * @param course The course data
+ * @returns Formatted string for embedding
+ */
+export const generateCourseEmbeddingText = (course: IBaseCourse): string => {
+    // Format learning goals as bullet points
+    const formattedLearningGoals = course.learningGoals
+        .map(goal => `• ${goal}`)
+        .join('\n');
+
+    // Format course items as bullet points (titles only)
+    const formattedCourseItems = course.courseItems
+        .map(item => `• ${item.title}`)
+        .join('\n');
+
+    // Format uses code examples as YES/NO
+    const usesCodeExamples = course.usesCodeExamples ? 'YES' : 'NO';
+
+    // Create structured text with sections
+    return `
+TITLE
+${course.title}
+
+DESCRIPTION
+${course.description}
+
+DIFFICULTY
+${course.difficulty}
+
+STUDENT PROFILE
+${course.studentProfile}
+
+LEARNING GOALS
+${formattedLearningGoals}
+
+COURSE ITEMS
+${formattedCourseItems}
+
+USES CODE EXAMPLES
+${usesCodeExamples}
+`.trim();
+};
+
+/**
  * Create course documents with embeddings and add them directly to the vector store
  * This bypasses Mongoose and directly inserts documents with compressed embeddings
  * @param vectorStore MongoDBAtlasVectorSearch instance
@@ -86,9 +131,9 @@ export const createCourseEmbeddings = async (
 ) => {
     // Create LangChain documents from courses
     const documents = courses.map(course => {
-        // Create a document with course title and description as content
+        // Create a document with structured course text for better embedding
         return new LangChainDocument({
-            pageContent: `${course.title} ${course.description}`,
+            pageContent: generateCourseEmbeddingText(course),
             metadata: course, // Include the full course data as metadata
         });
     });
