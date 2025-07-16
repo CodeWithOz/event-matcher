@@ -12,6 +12,7 @@ import {
     getVectorSearchIndexName,
 } from '@/lib/utils/env';
 import mongoose from 'mongoose';
+import { disconnectFromDatabase } from '@/lib/db/connection';
 
 // Define the expected event structure
 interface EventInput {
@@ -133,10 +134,6 @@ export async function POST(request: NextRequest) {
         );
     } finally {
         // Disconnect from MongoDB
-        try {
-            await mongoose.disconnect();
-        } catch (error) {
-            console.error('Error disconnecting from MongoDB:', error);
-        }
+        await disconnectFromDatabase();
     }
 }

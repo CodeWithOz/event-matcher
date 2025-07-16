@@ -12,6 +12,7 @@ import {
     createEventEmbeddings,
 } from '../lib/utils/embeddings';
 import mongoose from 'mongoose';
+import { disconnectFromDatabase } from '../lib/db/connection';
 
 // Sample events data
 const sampleEvents = [
@@ -122,8 +123,7 @@ async function seedEvents() {
         console.error('Error seeding database:', error);
     } finally {
         // Disconnect from MongoDB
-        await mongoose.disconnect();
-        console.log('Disconnected from MongoDB Atlas');
+        await disconnectFromDatabase();
         process.exit(0);
     }
 }

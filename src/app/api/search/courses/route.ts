@@ -10,6 +10,7 @@ import {
     searchSimilarCourses,
 } from '@/lib/utils/embeddings';
 import mongoose from 'mongoose';
+import { disconnectFromDatabase } from '@/lib/db/connection';
 
 // POST /api/search/courses - Search for courses based on query
 export async function POST(request: NextRequest) {
@@ -52,8 +53,6 @@ export async function POST(request: NextRequest) {
         );
     } finally {
         // Disconnect from MongoDB
-        if (mongoose.connection.readyState === 1) {
-            await mongoose.disconnect();
-        }
+        await disconnectFromDatabase();
     }
 }
