@@ -39,7 +39,7 @@ export default function Home() {
     // State for error message
     const [error, setError] = useState<string | null>(null);
     // State for active tab
-    const [activeTab, setActiveTab] = useState('events');
+    const [activeTab, setActiveTab] = useState('courses');
     // Reference to the first result for scrolling
     const firstResultRef = useRef<HTMLDivElement>(null);
 
@@ -118,8 +118,8 @@ export default function Home() {
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="events">Events</TabsTrigger>
                     <TabsTrigger value="courses">Courses</TabsTrigger>
+                    <TabsTrigger value="events">Events</TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="events" className="mt-6">
