@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "seed": "ts-node -P tsconfig.scripts.json src/scripts/seed-events.ts",
+    "seed:events": "ts-node -P tsconfig.scripts.json src/scripts/seed-events.ts",
+    "seed:courses": "ts-node -P tsconfig.scripts.json src/scripts/seed-courses.ts",
+    "seed": "npm run seed:events && npm run seed:courses",
     "test-connection": "ts-node -P tsconfig.scripts.json src/scripts/test-connection.ts",
     "check-env": "ts-node -P tsconfig.scripts.json src/scripts/check-env.ts"
   },
