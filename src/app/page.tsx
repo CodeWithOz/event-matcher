@@ -2,17 +2,12 @@
 
 import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CourseCard } from '@/components/CourseCard';
 
 // Define the Event type
 interface Event {
@@ -23,16 +18,13 @@ interface Event {
     updatedAt: string;
 }
 
-// Define the Course type
-interface Course {
+// Import IBaseCourse from the Course model
+import { IBaseCourse } from '@/lib/models/Course';
+
+// Define the Course type extending IBaseCourse
+interface Course extends IBaseCourse {
     _id: string;
-    title: string;
-    description: string;
-    difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
-    studentProfile: string;
-    duration: number;
-    url: string;
-    createdAt: string;
+    createdAt?: string;
     updatedAt: string;
 }
 
@@ -240,30 +232,12 @@ export default function Home() {
                     <h2 className='text-2xl font-semibold'>Matching Courses</h2>
 
                     {courses.map((course, index) => (
-                        <Card
+                        <CourseCard
                             key={course._id}
+                            course={course}
+                            isFirstResult={index === 0}
                             ref={index === 0 ? firstResultRef : undefined}
-                            className={index === 0 ? 'border-primary' : ''}
-                        >
-                            <CardHeader>
-                                <CardTitle>{course.title}</CardTitle>
-                                <CardDescription>
-                                    {course.difficulty} • {course.duration} minutes
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <p className="mb-4">{course.description}</p>
-                                <p className="text-sm text-muted-foreground mb-2">Student Profile:</p>
-                                <p className="mb-4">{course.studentProfile}</p>
-                                {course.url && (
-                                    <Button asChild variant="outline" size="sm">
-                                        <a href={course.url} target="_blank" rel="noopener noreferrer">
-                                            View Course
-                                        </a>
-                                    </Button>
-                                )}
-                            </CardContent>
-                        </Card>
+                        />
                     ))}
                 </div>
             )}
