@@ -141,6 +141,12 @@ export default function Home() {
                                         value={query}
                                         onChange={e => setQuery(e.target.value)}
                                         className='min-h-32'
+                                        onKeyDown={(e) => {
+                                            // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
+                                            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                                                handleSubmit(e);
+                                            }
+                                        }}
                                     />
                                 </div>
                                 <Button
@@ -176,6 +182,12 @@ export default function Home() {
                                         value={query}
                                         onChange={e => setQuery(e.target.value)}
                                         className='min-h-32'
+                                        onKeyDown={(e) => {
+                                            // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
+                                            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                                                handleSubmit(e);
+                                            }
+                                        }}
                                     />
                                 </div>
                                 <Button
