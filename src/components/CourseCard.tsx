@@ -13,21 +13,30 @@ interface CourseCardProps {
 
 export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(({ course, isFirstResult }, ref) => {
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [isProfileExpanded, setIsProfileExpanded] = useState(false);
   const [isLearningGoalsOpen, setIsLearningGoalsOpen] = useState(false);
   const [isCourseItemsOpen, setIsCourseItemsOpen] = useState(false);
   const [isInstructorsOpen, setIsInstructorsOpen] = useState(false);
   const [isDescriptionLong, setIsDescriptionLong] = useState(false);
+  const [isProfileLong, setIsProfileLong] = useState(false);
   
-  // Create a ref for the description paragraph to check its height
+  // Create refs for the description and profile paragraphs to check their heights
   const descriptionRef = useRef<HTMLParagraphElement>(null);
+  const profileRef = useRef<HTMLParagraphElement>(null);
   
-  // Check if description is longer than 6 lines
+  // Check if description is longer than 6 lines and profile is longer than 3 lines
   useEffect(() => {
+    // Approximate line height is 1.5rem (24px)
+    const lineHeight = 24;
+    
     if (descriptionRef.current) {
-      // Approximate line height is 1.5rem (24px)
-      const lineHeight = 24;
       const sixLinesHeight = lineHeight * 6;
       setIsDescriptionLong(descriptionRef.current.scrollHeight > sixLinesHeight);
+    }
+    
+    if (profileRef.current) {
+      const threeLinesHeight = lineHeight * 3;
+      setIsProfileLong(profileRef.current.scrollHeight > threeLinesHeight);
     }
   }, []);
 
@@ -70,10 +79,29 @@ export const CourseCard = forwardRef<HTMLDivElement, CourseCardProps>(({ course,
           )}
         </div>
 
-        {/* Student Profile */}
+        {/* Student Profile with show more/less toggle */}
         <div>
           <p className="text-sm text-muted-foreground mb-1">Student Profile:</p>
-          <p>{course.studentProfile}</p>
+          <p 
+            ref={profileRef}
+            className={`${!isProfileExpanded ? 'line-clamp-3' : ''}`}
+          >
+            {course.studentProfile}
+          </p>
+          {isProfileLong && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="mt-1 h-auto p-0 text-muted-foreground"
+              onClick={() => setIsProfileExpanded(!isProfileExpanded)}
+            >
+              {isProfileExpanded ? (
+                <span className="flex items-center">Show less <ChevronUp className="ml-1 h-4 w-4" /></span>
+              ) : (
+                <span className="flex items-center">Show more <ChevronDown className="ml-1 h-4 w-4" /></span>
+              )}
+            </Button>
+          )}
         </div>
 
         {/* Learning Goals (collapsible) */}
