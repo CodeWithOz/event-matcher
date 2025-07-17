@@ -116,34 +116,43 @@ export default function Home() {
                 </p>
             </div>
 
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="courses">Courses</TabsTrigger>
-                    <TabsTrigger value="events">Events</TabsTrigger>
+            <Tabs
+                value={activeTab}
+                onValueChange={setActiveTab}
+                className='w-full'
+            >
+                <TabsList className='grid w-full grid-cols-2'>
+                    <TabsTrigger value='courses'>Courses</TabsTrigger>
+                    <TabsTrigger value='events'>Events</TabsTrigger>
                 </TabsList>
-                
-                <TabsContent value="events" className="mt-6">
+
+                <TabsContent value='events' className='mt-6'>
                     <Card className='mb-8'>
                         <CardHeader>
                             <CardTitle>Find Your Perfect Event</CardTitle>
                             <CardDescription>
-                                Enter a description of what you&apos;re looking for in
-                                an event
+                                Enter a description of what you&apos;re looking
+                                for in an event
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
                             <form onSubmit={handleSubmit} className='space-y-4'>
                                 <div className='space-y-2'>
-                                    <Label htmlFor='query'>Your preferences</Label>
+                                    <Label htmlFor='query'>
+                                        Your preferences
+                                    </Label>
                                     <Textarea
                                         id='query'
                                         placeholder="Describe what you're looking for in an event..."
                                         value={query}
                                         onChange={e => setQuery(e.target.value)}
                                         className='min-h-32'
-                                        onKeyDown={(e) => {
+                                        onKeyDown={e => {
                                             // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
-                                            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                                            if (
+                                                (e.metaKey || e.ctrlKey) &&
+                                                e.key === 'Enter'
+                                            ) {
                                                 handleSubmit(e);
                                             }
                                         }}
@@ -162,29 +171,34 @@ export default function Home() {
                         </CardContent>
                     </Card>
                 </TabsContent>
-                
-                <TabsContent value="courses" className="mt-6">
+
+                <TabsContent value='courses' className='mt-6'>
                     <Card className='mb-8'>
                         <CardHeader>
                             <CardTitle>Find Your Perfect Course</CardTitle>
                             <CardDescription>
-                                Enter a description of what you&apos;re looking for in
-                                a course
+                                Enter a description of what you&apos;re looking
+                                for in a course
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
                             <form onSubmit={handleSubmit} className='space-y-4'>
                                 <div className='space-y-2'>
-                                    <Label htmlFor='query'>Your preferences</Label>
+                                    <Label htmlFor='query'>
+                                        Your preferences
+                                    </Label>
                                     <Textarea
                                         id='query'
                                         placeholder="Describe what you're looking for in a course..."
                                         value={query}
                                         onChange={e => setQuery(e.target.value)}
                                         className='min-h-32'
-                                        onKeyDown={(e) => {
+                                        onKeyDown={e => {
                                             // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
-                                            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                                            if (
+                                                (e.metaKey || e.ctrlKey) &&
+                                                e.key === 'Enter'
+                                            ) {
                                                 handleSubmit(e);
                                             }
                                         }}
@@ -237,7 +251,7 @@ export default function Home() {
                     ))}
                 </div>
             )}
-            
+
             {/* Display course results */}
             {activeTab === 'courses' && courses.length > 0 && (
                 <div className='space-y-6'>
@@ -265,19 +279,34 @@ export default function Home() {
                     {activeTab === 'events' && events.length === 0 && (
                         <Alert className='mb-6'>
                             <AlertDescription>
-                                No matching events found. Try a different search query.
+                                No matching events found. Try a different search
+                                query.
                             </AlertDescription>
                         </Alert>
                     )}
                     {activeTab === 'courses' && courses.length === 0 && (
                         <Alert className='mb-6'>
                             <AlertDescription>
-                                No matching courses found. Try a different search query.
+                                No matching courses found. Try a different
+                                search query.
                             </AlertDescription>
                         </Alert>
                     )}
                 </>
             )}
+
+            {/* Attribution footer */}
+            <footer className='mt-12 text-center text-sm text-muted-foreground pb-4'>
+                Created by{' '}
+                <a
+                    href='https://www.linkedin.com/in/uchechukwu-ozoemena/'
+                    target='_blank'
+                    rel='noopener noreferrer'
+                    className='hover:underline'
+                >
+                    CodeWithOz
+                </a>
+            </footer>
         </div>
     );
 }
