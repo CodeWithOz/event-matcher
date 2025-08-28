@@ -45,6 +45,9 @@ export default function AdminHeader() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/">Home</Link>
+          </Button>
           <Button variant="outline" onClick={logout} disabled={loading}>
             {loading ? "Logging out…" : "Logout"}
           </Button>

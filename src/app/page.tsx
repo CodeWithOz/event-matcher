@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CourseCard } from '@/components/CourseCard';
+import Link from 'next/link';
 
 // Define the Event type
 interface Event {
@@ -40,8 +41,25 @@ export default function Home() {
     const [error, setError] = useState<string | null>(null);
     // State for active tab
     const [activeTab, setActiveTab] = useState('courses');
+    // State for admin status
+    const [isAdmin, setIsAdmin] = useState(false);
     // Reference to the first result for scrolling
     const firstResultRef = useRef<HTMLDivElement>(null);
+
+    // Check if user is admin on mount
+    useEffect(() => {
+        const checkAdminStatus = async () => {
+            try {
+                const response = await fetch('/api/admin/status');
+                const data = await response.json();
+                setIsAdmin(data.isAdmin || false);
+            } catch {
+                setIsAdmin(false);
+            }
+        };
+
+        checkAdminStatus();
+    }, []);
 
     // Handle form submission
     const handleSubmit = async (e: React.FormEvent) => {
@@ -107,14 +125,31 @@ export default function Home() {
     };
 
     return (
-        <div className='container mx-auto py-8 px-4 max-w-4xl'>
-            <div className='mb-8 text-center'>
-                <h1 className='text-3xl font-bold mb-2'>Content Matcher</h1>
-                <p className='text-muted-foreground'>
-                    Describe what you&apos;re looking for and we&apos;ll find
-                    the best matching content
-                </p>
-            </div>
+        <div className='min-h-screen bg-gray-50'>
+            {/* Header */}
+            <header className="w-full bg-gray-800">
+                <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+                    <div className="flex-1 flex items-center justify-center">
+                        <h1 className="text-white text-xl font-semibold">Content Matcher</h1>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {isAdmin && (
+                            <Button variant="outline" asChild>
+                                <Link href="/admin">Admin</Link>
+                            </Button>
+                        )}
+                    </div>
+                </div>
+            </header>
+
+            {/* Main content */}
+            <div className='container mx-auto py-8 px-4 max-w-4xl'>
+                <div className='mb-8 text-center'>
+                    <p className='text-muted-foreground'>
+                        Describe what you&apos;re looking for and we&apos;ll find
+                        the best matching content
+                    </p>
+                </div>
 
             <Tabs
                 value={activeTab}
@@ -307,6 +342,7 @@ export default function Home() {
                     CodeWithOz
                 </a>
             </footer>
+            </div>
         </div>
     );
 }
