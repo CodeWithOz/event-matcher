@@ -5,8 +5,6 @@ import type { NextRequest } from 'next/server';
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  console.log(pathname);
-
   // Bypass: login page and auth APIs
   const isLoginPage = pathname === '/admin/login' || pathname === '/admin/login/';
   if (isLoginPage) return NextResponse.next();

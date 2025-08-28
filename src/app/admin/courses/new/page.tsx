@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import Link from 'next/link';
+import AdminHeader from '@/components/admin/AdminHeader';
 
 const schema = CourseInputSchema;
 
@@ -67,13 +67,12 @@ export default function NewCoursePage() {
   };
 
   return (
-    <div className="container mx-auto max-w-3xl py-8">
-      <Card>
+    <div className="min-h-screen bg-gray-50">
+      <AdminHeader />
+      <div className="container mx-auto max-w-3xl py-8">
+        <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Add New Course</CardTitle>
-          <Link href="/">
-            <Button variant="outline">Home</Button>
-          </Link>
         </CardHeader>
         <CardContent>
 
@@ -305,7 +304,8 @@ export default function NewCoursePage() {
             </div>
           )}
         </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }

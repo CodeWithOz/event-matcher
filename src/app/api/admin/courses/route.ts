@@ -4,6 +4,9 @@ import { connectToDatabase, disconnectFromDatabase } from '@/lib/db/connection';
 import { getMongoDBConnectionString, getOpenAIApiKey } from '@/lib/utils/env';
 import { initializeEmbeddings, initializeVectorStore, createCourseEmbeddings } from '@/lib/utils/embeddings';
 import { CourseInputSchema } from '@/lib/validation/course';
+import type { IBaseCourse } from '@/lib/models/Course';
+
+type CourseVectorDoc = { _id: mongoose.Types.ObjectId | { toString(): string }; metadata?: IBaseCourse };
 
 // POST /api/admin/courses - Create a new course and generate embeddings
 export async function POST(request: NextRequest) {
@@ -40,6 +43,30 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Error creating course:', error);
     return NextResponse.json({ error: 'Failed to create course' }, { status: 500 });
+  } finally {
+    await disconnectFromDatabase();
+  }
+}
+
+// GET /api/admin/courses - List courses (from vector store documents' metadata)
+export async function GET() {
+  try {
+    // Connect to MongoDB
+    await connectToDatabase(getMongoDBConnectionString());
+
+    const collection = mongoose.connection.collection('courses');
+    // Exclude large fields like embedding/content; only return metadata
+    const docs = (await collection
+      .find({}, { projection: { embedding: 0, content: 0 } })
+      .sort({ _id: -1 })
+      .toArray()) as unknown as CourseVectorDoc[];
+
+    const courses = docs.map((d) => ({ id: d._id.toString(), ...(d.metadata ?? {}) }));
+
+    return NextResponse.json({ courses }, { status: 200 });
+  } catch (error: unknown) {
+    console.error('Error listing courses:', error);
+    return NextResponse.json({ error: 'Failed to list courses' }, { status: 500 });
   } finally {
     await disconnectFromDatabase();
   }
