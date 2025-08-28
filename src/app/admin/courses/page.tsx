@@ -1,32 +1,75 @@
+"use client";
+
 import AdminHeader from "@/components/admin/AdminHeader";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import mongoose from "mongoose";
-import { connectToDatabase, disconnectFromDatabase } from "@/lib/db/connection";
-import { getMongoDBConnectionString } from "@/lib/utils/env";
+import { useState, useEffect } from "react";
 import { Course, IBaseCourse } from "@/lib/models/Course";
 
 type Course = { id: string } & Partial<IBaseCourse>;
 
-async function getCourses(): Promise<Course[]> {
-  await connectToDatabase(getMongoDBConnectionString());
+export default function AdminCoursesPage() {
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextSkip, setNextSkip] = useState<number | null>(0);
+  const [error, setError] = useState<string | null>(null);
 
-  try {
-    // Get courses from the vector store collection (where embeddings are stored)
-    const collection = mongoose.connection.collection("courses");
-    const docs = (await collection
-      .find({}, { projection: { embedding: 0, content: 0 } })
-      .sort({ _id: -1 })
-      .toArray()) as Array<{ _id: mongoose.Types.ObjectId } & IBaseCourse>;
+  const loadCourses = async (skip: number = 0, append: boolean = false) => {
+    try {
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
 
-    return docs.map((d) => ({ id: d._id.toString(), ...d }));
-  } finally {
-    await disconnectFromDatabase();
+      const response = await fetch(`/api/admin/courses?limit=20&skip=${skip}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to load courses");
+      }
+
+      if (append) {
+        setCourses((prev) => [...prev, ...data.courses]);
+      } else {
+        setCourses(data.courses);
+      }
+
+      setHasMore(data.hasMore);
+      setNextSkip(data.nextSkip);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load courses");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
+
+  const loadMore = () => {
+    if (nextSkip !== null) {
+      loadCourses(nextSkip, true);
+    }
+  };
+
+  useEffect(() => {
+    loadCourses();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <AdminHeader />
+        <main className="mx-auto max-w-5xl px-4 py-8">
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+          </div>
+        </main>
+      </div>
+    );
   }
-}
-
-export default async function AdminCoursesPage() {
-  const courses = await getCourses();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -39,23 +82,42 @@ export default async function AdminCoursesPage() {
           </Link>
         </div>
 
-        {courses.length === 0 ? (
+        {error && (
+          <div className="mb-6 p-4 border border-red-200 rounded-md bg-red-50 text-red-700">
+            {error}
+          </div>
+        )}
+
+        {courses.length === 0 && !loading ? (
           <p className="text-gray-600">No courses found.</p>
         ) : (
-          <ul className="space-y-3">
+          <div className="space-y-3">
             {courses.map((c) => (
-              <li key={c.id} className="rounded-md border bg-white p-4">
+              <div key={c.id} className="rounded-md border bg-white p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-medium">{c.title || "Untitled"}</div>
                     <div className="text-sm text-gray-600">
-                      {c.difficulty ? `${c.difficulty} • ` : ""}{c.duration ? `${c.duration} min` : ""}
+                      {c.difficulty ? `${c.difficulty} • ` : ""}
+                      {c.duration ? `${c.duration} min` : ""}
                     </div>
                   </div>
                 </div>
-              </li>
+              </div>
             ))}
-          </ul>
+
+            {hasMore && (
+              <div className="flex justify-center pt-4">
+                <Button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  variant="outline"
+                >
+                  {loadingMore ? "Loading…" : "Load More"}
+                </Button>
+              </div>
+            )}
+          </div>
         )}
       </main>
     </div>

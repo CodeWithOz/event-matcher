@@ -6,7 +6,7 @@ import { initializeEmbeddings, initializeVectorStore, createCourseEmbeddings } f
 import { CourseInputSchema } from '@/lib/validation/course';
 import type { IBaseCourse } from '@/lib/models/Course';
 
-type CourseVectorDoc = { _id: mongoose.Types.ObjectId | { toString(): string }; metadata?: IBaseCourse };
+type CourseVectorDoc = { _id: mongoose.Types.ObjectId | { toString(): string }; } & IBaseCourse;
 
 // POST /api/admin/courses - Create a new course and generate embeddings
 export async function POST(request: NextRequest) {
@@ -49,8 +49,12 @@ export async function POST(request: NextRequest) {
 }
 
 // GET /api/admin/courses - List courses (from vector store documents' metadata)
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const limit = parseInt(searchParams.get('limit') || '20');
+    const skip = parseInt(searchParams.get('skip') || '0');
+
     // Connect to MongoDB
     await connectToDatabase(getMongoDBConnectionString());
 
@@ -59,11 +63,18 @@ export async function GET() {
     const docs = (await collection
       .find({}, { projection: { embedding: 0, content: 0 } })
       .sort({ _id: -1 })
+      .skip(skip)
+      .limit(limit + 1) // Get one extra to check if there are more
       .toArray()) as unknown as CourseVectorDoc[];
 
-    const courses = docs.map((d) => ({ id: d._id.toString(), ...(d.metadata ?? {}) }));
+    const hasMore = docs.length > limit;
+    const courses = docs.slice(0, limit).map((d) => ({ id: d._id.toString(), ...d }));
 
-    return NextResponse.json({ courses }, { status: 200 });
+    return NextResponse.json({
+      courses,
+      hasMore,
+      nextSkip: hasMore ? skip + limit : null
+    }, { status: 200 });
   } catch (error: unknown) {
     console.error('Error listing courses:', error);
     return NextResponse.json({ error: 'Failed to list courses' }, { status: 500 });
