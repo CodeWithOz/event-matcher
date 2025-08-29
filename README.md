@@ -1,6 +1,6 @@
 # Content Matcher
 
-A web application that matches user preferences to content (courses and events) using AI-powered similarity search. This application uses Next.js, MongoDB Atlas, LangChain, and OpenAI embeddings to find courses and events that best match a user's text description.
+A web application that uses vector-based similarity search to find courses and events that best match a user's provided description. This application uses Next.js, MongoDB Atlas, LangChain, and OpenAI embeddings.
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
