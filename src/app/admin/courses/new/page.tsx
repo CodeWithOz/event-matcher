@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import AdminHeader from '@/components/admin/AdminHeader';
+import Link from 'next/link';
 
 const schema = CourseInputSchema;
 
@@ -71,7 +72,12 @@ export default function NewCoursePage() {
       <AdminHeader />
       <div className="container mx-auto max-w-3xl py-8">
         <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader>
+          <div className="flex items-center gap-2 mb-2">
+            <Button variant="outline" asChild>
+              <Link href="/admin/courses">← Back to Courses</Link>
+            </Button>
+          </div>
           <CardTitle>Add New Course</CardTitle>
         </CardHeader>
         <CardContent>
