@@ -1,5 +1,12 @@
 import { CourseInput } from '@/lib/validation/course';
-import { CourseFieldSuggestions, CourseImportError, CourseImportResult, ConfidenceLevel } from '@/lib/course-import/types';
+import {
+  CourseFieldSuggestions,
+  CourseImportError,
+  CourseImportResult,
+  ConfidenceLevel,
+} from '@/lib/course-import/types';
+import { load as loadCheerio, type CheerioAPI, type Cheerio } from 'cheerio';
+import type { AnyNode } from 'domhandler';
 
 const CONFIDENCE_ORDER: Record<ConfidenceLevel, number> = {
   low: 0,
@@ -17,6 +24,8 @@ type ExtractionContext = {
   html: string;
   url: string;
 };
+
+type CheerioSelection = Cheerio<AnyNode>;
 
 export async function importCourseFromUrl(url: string): Promise<CourseImportResult> {
   const normalizedUrl = normalizeUrl(url);
@@ -117,14 +126,11 @@ function extractCourseSuggestions(context: ExtractionContext): { suggestions: Co
   }
   warnings.push(...nextDataExtraction.warnings);
 
-  const jsonLdCourses = extractJsonLdCourses(context.html);
-  if (jsonLdCourses.length > 0) {
-    for (const course of jsonLdCourses) {
-      applyDraftToSuggestions(suggestions, course, 'high', 'jsonld');
-    }
-  } else {
-    warnings.push('No Course schema JSON-LD detected');
+  const htmlBodyExtraction = extractHtmlBodyDraft(context.html);
+  if (htmlBodyExtraction.draft) {
+    applyDraftToSuggestions(suggestions, htmlBodyExtraction.draft, 'medium', 'html-body');
   }
+  warnings.push(...htmlBodyExtraction.warnings);
 
   const metaDraft = extractMetaDraft(context.html);
   if (metaDraft) {
@@ -182,13 +188,6 @@ function extractNextDataDraft(html: string): { draft: PartialCourseDraft | null;
         const level = normalizeDifficulty(heroBlock.level);
         if (level) {
           draft.difficulty = level;
-        }
-      }
-
-      if (typeof heroBlock.duration === 'string') {
-        const durationMinutes = parseDurationFromDisplay(heroBlock.duration);
-        if (durationMinutes !== null) {
-          draft.duration = durationMinutes;
         }
       }
     }
@@ -315,7 +314,7 @@ function extractNextDataDraft(html: string): { draft: PartialCourseDraft | null;
     }
 
     if (!draft.learningGoals && typeof courseRecord.content === 'string') {
-      const bulletGoals = extractListItemsFromContent(courseRecord.content, /(what you will learn|you will learn|learning objectives)/i);
+      const bulletGoals = extractListItemsFromContent(courseRecord.content, /(what you'll learn|what you will learn|you will learn|learning objectives)/i);
       if (bulletGoals.length > 0) {
         draft.learningGoals = bulletGoals;
       }
@@ -351,45 +350,275 @@ function findBlockByTitle(blocks: Array<Record<string, unknown>>, matcher: RegEx
   }) as (Record<string, unknown> & { title?: unknown; body?: unknown }) | undefined;
 }
 
-function getFirstString(
-  record: Record<string, unknown>,
-  keys: string[]
-): string | null {
-  for (const key of keys) {
-    const value = record[key as keyof typeof record];
-    if (typeof value === "string" && value.trim()) {
-      return value;
+function extractHtmlBodyDraft(html: string): { draft: PartialCourseDraft | null; warnings: string[] } {
+  const $ = loadCheerio(html);
+  const draft: PartialCourseDraft = {};
+  const warnings: string[] = [];
+
+  const headingTitle = sanitizeText($('h1').first().text());
+  if (headingTitle) {
+    draft.title = headingTitle;
+  }
+
+  const description = extractSectionText($, /about this course/i);
+  if (description) {
+    draft.description = description;
+  }
+
+  const studentProfile = extractSectionText($, /(who should join|who is this course for)/i);
+  if (studentProfile) {
+    draft.studentProfile = studentProfile;
+  }
+
+  const learningGoals = extractSectionListItems($, '#features-grid');
+  if (learningGoals.length > 0) {
+    draft.learningGoals = learningGoals;
+  }
+
+  const outlineExtraction = extractCourseOutlineFromRoot($);
+  if (outlineExtraction.items.length > 0) {
+    draft.courseItems = outlineExtraction.items;
+    if (outlineExtraction.totalDuration > 0) {
+      draft.duration = outlineExtraction.totalDuration;
     }
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        if (typeof entry === "string" && entry.trim()) {
-          return entry;
-        }
-      }
+    if (
+      outlineExtraction.codeExampleCount > 0 ||
+      outlineExtraction.items.some((item) => item.usesCodeExample)
+    ) {
+      draft.usesCodeExamples = true;
     }
   }
 
-  return null;
+  const instructors = extractInstructorsFromRoot($);
+  if (instructors.length > 0) {
+    draft.instructors = instructors;
+  }
+
+  if (Object.keys(draft).length === 0) {
+    return { draft: null, warnings };
+  }
+
+  return { draft, warnings };
 }
 
-function getFirstNumber(
-  record: Record<string, unknown>,
-  keys: string[]
-): number | null {
-  for (const key of keys) {
-    const value = record[key as keyof typeof record];
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === "string") {
-      const numeric = Number.parseFloat(value);
-      if (!Number.isNaN(numeric)) {
-        return numeric;
-      }
+function extractCourseOutlineFromRoot(
+  $: CheerioAPI
+): {
+  items: Array<{ title: string; duration: number; usesCodeExample: boolean }>;
+  codeExampleCount: number;
+  totalDuration: number;
+} {
+  const items: Array<{ title: string; duration: number; usesCodeExample: boolean }> = [];
+  let codeExampleCount = 0;
+
+  const anchor = $('#course-outline');
+  if (!anchor.length) {
+    return { items, codeExampleCount, totalDuration: 0 };
+  }
+
+  const followingDivs = anchor.nextAll('div');
+
+  const summaryContainer = followingDivs
+    .filter((_, el) => {
+      const heading = $(el).find('h2').first();
+      return heading.length > 0 && /course outline/i.test(heading.text());
+    })
+    .first();
+
+  if (summaryContainer.length) {
+    const summaryText = sanitizeText(summaryContainer.text());
+    const codeMatch = summaryText.match(/(\d+)\s*Code\s*Examples/i);
+    if (codeMatch) {
+      codeExampleCount = Number.parseInt(codeMatch[1], 10);
     }
   }
 
-  return null;
+  const lessonsContainer = followingDivs
+    .filter((_, el) => $(el).find('ul[data-sentry-component="Lessons"]').length > 0)
+    .first();
+
+  if (!lessonsContainer.length) {
+    return { items, codeExampleCount, totalDuration: 0 };
+  }
+
+  const lessonsList = lessonsContainer
+    .find('ul[data-sentry-component="Lessons"]').first();
+
+  lessonsList
+    .children('li')
+    .each((_, li) => {
+      const element = $(li);
+      const title = sanitizeText(
+        element.find('p.text-base').first().text() || element.find('p').first().text()
+      );
+      if (!title) {
+        return;
+      }
+
+      const detailText = sanitizeText(element.find('p.text-sm').first().text());
+      let duration = parseDurationFromDisplay(detailText);
+      if (duration === null) {
+        duration = parseDurationFromDisplay(sanitizeText(element.text()));
+      }
+
+      const usesCodeExample = /code|notebook|script|demo/i.test(detailText);
+
+      items.push({
+        title,
+        duration: duration && duration > 0 ? duration : 0,
+        usesCodeExample,
+      });
+    });
+
+  const totalDuration = items.reduce((acc, item) => acc + item.duration, 0);
+
+  return { items, codeExampleCount, totalDuration };
+}
+
+function extractInstructorsFromRoot(
+  $: CheerioAPI
+): Array<{ name: string; title: string }> {
+  const anchor = $('#instructors');
+  if (!anchor.length) {
+    return [];
+  }
+
+  const heading = anchor
+    .nextAll('h2')
+    .filter((_, el) => /instructor/i.test($(el).text()))
+    .first();
+
+  if (!heading.length) {
+    return [];
+  }
+
+  let cardsContainer = heading.next();
+  while (cardsContainer.length && cardsContainer[0].type !== 'tag') {
+    cardsContainer = cardsContainer.next();
+  }
+
+  if (!cardsContainer.length) {
+    return [];
+  }
+
+  const instructors: Array<{ name: string; title: string }> = [];
+
+  cardsContainer
+    .find('div')
+    .filter((_, el) => $(el).find('h3').length > 0)
+    .each((_, card) => {
+      const cardEl = $(card);
+      const name = sanitizeText(cardEl.find('h3').first().text());
+      if (!name) {
+        return;
+      }
+      const title = sanitizeText(cardEl.find('#instructor-title').first().text()) || 'Instructor';
+      instructors.push({ name, title });
+    });
+
+  return instructors;
+}
+
+function extractSectionText(
+  $: CheerioAPI,
+  matcher: RegExp
+): string | null {
+  const container = findSectionContainer($, matcher);
+  if (!container || !container.length) {
+    return null;
+  }
+
+  return collectTextFromContainer($, container);
+}
+
+function extractSectionListItems(
+  $: CheerioAPI,
+  matcher: string
+): string[] {
+  const container = findSectionContainer($, matcher);
+  if (!container || !container.length) {
+    return [];
+  }
+
+  const items: string[] = [];
+  container
+    .find('li')
+    .each((_, li) => {
+      const text = sanitizeText($(li).text());
+      if (text) {
+        items.push(text);
+      }
+    });
+
+  return items;
+}
+
+function findSectionContainer(
+  $: CheerioAPI,
+  matcher: RegExp | string
+): CheerioSelection | null {
+  if (typeof matcher === 'string') {
+    const matchingNode = $(matcher).first();
+    return matchingNode.length ? matchingNode as CheerioSelection : null;
+  }
+
+  const heading = $('h2')
+    .filter((_, el) => matcher.test($(el).text().trim()))
+    .first();
+
+  if (!heading.length) {
+    return null;
+  }
+
+  const proseSibling = heading.nextAll('.prose').first();
+  if (proseSibling.length) {
+    return proseSibling as CheerioSelection;
+  }
+
+  const sectionCard = heading.closest('div');
+  if (sectionCard.length) {
+    const nestedProse = sectionCard.find('.prose').first();
+    if (nestedProse.length) {
+      return nestedProse as CheerioSelection;
+    }
+  }
+
+  const nextElement = heading
+    .nextAll()
+    .filter((_, el) => el.type === 'tag')
+    .first();
+  if (nextElement.length) {
+    return nextElement as CheerioSelection;
+  }
+
+  return heading.parent() as CheerioSelection;
+}
+
+function collectTextFromContainer(
+  $: CheerioAPI,
+  container: CheerioSelection | null
+): string | null {
+  if (!container || !container.length) {
+    return null;
+  }
+
+  const paragraphs: string[] = [];
+  container
+    .find('p,li')
+    .toArray()
+    .forEach((el) => {
+      const text = sanitizeText($(el).text());
+      if (text) {
+        paragraphs.push(text);
+      }
+    });
+
+  if (paragraphs.length > 0) {
+    return sanitizeMultiline(paragraphs.join('\n\n'));
+  }
+
+  const text = sanitizeMultiline(container.text());
+  return text || null;
 }
 
 type ExtractBlockOptions = {
@@ -447,67 +676,33 @@ function extractSectionFromContent(
   content: string,
   matcher: RegExp
 ): string | null {
-  const decoded = decodeHtmlEntities(content);
-  const headingRegex = /<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = headingRegex.exec(decoded))) {
-    const heading = sanitizeText(stripHtml(match[1] ?? ""));
-    if (!matcher.test(heading)) {
-      continue;
-    }
-
-    const remainder = decoded.slice(headingRegex.lastIndex);
-    const nextHeadingIndex = remainder.search(/<h[1-6][^>]*>/i);
-    const sectionHtml =
-      nextHeadingIndex === -1
-        ? remainder
-        : remainder.slice(0, nextHeadingIndex);
-    const text = extractBlockText(sectionHtml, { preserveLineBreaks: true });
-    if (text) {
-      return text;
-    }
+  const $ = loadCheerio(content);
+  const container = findSectionContainer($, matcher);
+  if (!container || !container.length) {
+    return null;
   }
-
-  return null;
+  return collectTextFromContainer($, container);
 }
 
 function extractListItemsFromContent(
   content: string,
   matcher: RegExp
 ): string[] {
-  const decoded = decodeHtmlEntities(content);
-  const headingRegex = /<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi;
+  const $ = loadCheerio(content);
+  const container = findSectionContainer($, matcher);
+  if (!container || !container.length) {
+    return [];
+  }
+
   const items: string[] = [];
-  let match: RegExpExecArray | null;
-
-  while ((match = headingRegex.exec(decoded))) {
-    const heading = sanitizeText(stripHtml(match[1] ?? ""));
-    if (!matcher.test(heading)) {
-      continue;
-    }
-
-    const remainder = decoded.slice(headingRegex.lastIndex);
-    const nextHeadingIndex = remainder.search(/<h[1-6][^>]*>/i);
-    const sectionHtml =
-      nextHeadingIndex === -1
-        ? remainder
-        : remainder.slice(0, nextHeadingIndex);
-    const listMatches = sectionHtml.match(/<li[^>]*>([\s\S]*?)<\/li>/gi);
-    if (!listMatches) {
-      continue;
-    }
-
-    for (const listItem of listMatches) {
-      const text = extractBlockText(listItem);
+  container
+    .find('li')
+    .each((_, li) => {
+      const text = sanitizeText($(li).text());
       if (text) {
         items.push(text);
       }
-    }
-
-    if (items.length > 0) {
-      break;
-    }
-  }
+    });
 
   return items;
 }
@@ -516,12 +711,12 @@ function parseDurationFromDisplay(value: string): number | null {
   const normalized = value.toLowerCase();
   let totalMinutes = 0;
 
-  const hourMatch = normalized.match(/(\d+(?:[\.,]\d+)?)\s*(hour|hr)/);
+  const hourMatch = normalized.match(/(\d+(?:[\.,]\d+)?)\s*(hours?|hrs?)/);
   if (hourMatch) {
     totalMinutes += parseFloat(hourMatch[1].replace(",", ".")) * 60;
   }
 
-  const minuteMatch = normalized.match(/(\d+(?:[\.,]\d+)?)\s*(minute|min)/);
+  const minuteMatch = normalized.match(/(\d+(?:[\.,]\d+)?)\s*(minutes?|mins?)/);
   if (minuteMatch) {
     totalMinutes += parseFloat(minuteMatch[1].replace(",", "."));
   }
@@ -550,6 +745,18 @@ function normalizeCourseSuggestions(
   const warnings: string[] = [];
 
   updateSuggestion(suggestions, "url", url, "high", "input");
+
+  const courseItems = suggestions.courseItems.value;
+  if (courseItems && courseItems.length > 0) {
+    const totalDuration = courseItems.reduce((acc, item) => {
+      const duration = Number.isFinite(item.duration) ? item.duration : 0;
+      return acc + Math.max(0, duration);
+    }, 0);
+
+    if (totalDuration > 0) {
+      updateSuggestion(suggestions, "duration", totalDuration, "high", "course-items");
+    }
+  }
 
   if (
     suggestions.duration.value !== null &&
@@ -731,7 +938,7 @@ function updateSuggestion<K extends keyof CourseFieldSuggestions>(
   const currentConfidence = current.confidence;
   const shouldReplace =
     current.value === null ||
-    CONFIDENCE_ORDER[confidence] >= CONFIDENCE_ORDER[currentConfidence];
+    CONFIDENCE_ORDER[confidence] > CONFIDENCE_ORDER[currentConfidence];
 
   if (shouldReplace) {
     suggestions[field] = {
@@ -740,333 +947,6 @@ function updateSuggestion<K extends keyof CourseFieldSuggestions>(
       source: source ?? current.source,
     } as CourseFieldSuggestions[K];
   }
-}
-
-function extractJsonLdCourses(html: string): PartialCourseDraft[] {
-  const scripts = Array.from(
-    html.matchAll(
-      /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
-    )
-  );
-  const courses: PartialCourseDraft[] = [];
-
-  for (const match of scripts) {
-    const rawJson = match[1];
-    try {
-      const parsed = JSON.parse(decodeHtmlEntities(rawJson));
-      collectCoursesFromJson(parsed, courses);
-    } catch {
-      // continue on parse errors; downstream warnings can surface in UI if needed.
-      continue;
-    }
-  }
-
-  return courses;
-}
-
-function collectCoursesFromJson(
-  payload: unknown,
-  collector: PartialCourseDraft[]
-) {
-  if (Array.isArray(payload)) {
-    for (const item of payload) {
-      collectCoursesFromJson(item, collector);
-    }
-    return;
-  }
-
-  if (typeof payload !== "object" || payload === null) {
-    return;
-  }
-
-  const node = payload as Record<string, unknown>;
-  const type = node["@type"];
-
-  const types: string[] = Array.isArray(type)
-    ? type.flatMap((entry) => (typeof entry === "string" ? entry : []))
-    : typeof type === "string"
-    ? [type]
-    : [];
-
-  if (!types.some((t) => t.toLowerCase() === "course")) {
-    // even if parent is not a Course we should inspect children
-    for (const value of Object.values(node)) {
-      collectCoursesFromJson(value, collector);
-    }
-    return;
-  }
-
-  const draft: PartialCourseDraft = {};
-
-  if (typeof node.name === "string") {
-    draft.title = sanitizeText(node.name);
-  }
-
-  if (typeof node.description === "string") {
-    draft.description = sanitizeText(node.description);
-  }
-
-  if (typeof node.learningOutcome === "string") {
-    draft.learningGoals = splitSentences(node.learningOutcome);
-  } else if (Array.isArray(node.learningOutcome)) {
-    draft.learningGoals = node.learningOutcome
-      .filter((item): item is string => typeof item === "string")
-      .map((item) => sanitizeText(item));
-  }
-
-  const audience = node.audience;
-  if (typeof audience === "object" && audience !== null) {
-    const audienceDescription = (audience as Record<string, unknown>)
-      .description;
-    if (typeof audienceDescription === "string") {
-      draft.studentProfile = sanitizeText(audienceDescription);
-    }
-  }
-
-  const level = node.educationalLevel ?? node.level;
-  if (typeof level === "string") {
-    const normalizedLevel = normalizeDifficulty(level);
-    if (normalizedLevel) {
-      draft.difficulty = normalizedLevel;
-    }
-  }
-
-  const durationIso =
-    typeof node.timeRequired === "string"
-      ? node.timeRequired
-      : typeof node.duration === "string"
-      ? node.duration
-      : null;
-  if (durationIso) {
-    const minutes = parseIsoDurationToMinutes(durationIso);
-    if (minutes !== null) {
-      draft.duration = minutes;
-    }
-  }
-
-  const instructors = extractPersonList(
-    node.instructor ?? node.creator ?? node.teacher
-  );
-  if (instructors.length > 0) {
-    draft.instructors = instructors;
-  }
-
-  const outline = extractOutlineItems(node);
-  if (outline.length > 0) {
-    draft.courseItems = outline;
-  }
-
-  const keywords = node.keywords;
-  if (typeof keywords === "string") {
-    if (/code example/i.test(keywords)) {
-      draft.usesCodeExamples = true;
-    }
-  } else if (Array.isArray(keywords)) {
-    if (
-      keywords.some(
-        (item) => typeof item === "string" && /code example/i.test(item)
-      )
-    ) {
-      draft.usesCodeExamples = true;
-    }
-  }
-
-  collector.push(draft);
-}
-
-function extractPersonList(
-  entry: unknown
-): Array<{ name: string; title: string }> {
-  if (!entry) return [];
-  const items = Array.isArray(entry) ? entry : [entry];
-  const result: Array<{ name: string; title: string }> = [];
-  for (const item of items) {
-    if (typeof item === "object" && item !== null) {
-      const node = item as Record<string, unknown>;
-      const name =
-        typeof node.name === "string" ? sanitizeText(node.name) : null;
-      if (!name) {
-        continue;
-      }
-      const title =
-        typeof node.jobTitle === "string" ? sanitizeText(node.jobTitle) : "";
-      result.push({ name, title });
-    }
-  }
-  return result;
-}
-
-function extractOutlineItems(
-  node: Record<string, unknown>
-): Array<{ title: string; duration: number; usesCodeExample: boolean }> {
-  const outlineRaw: Array<{
-    title: string;
-    duration: number;
-    usesCodeExample: boolean;
-    position: number | null;
-    order: number;
-  }> = [];
-  const visited = new WeakSet<Record<string, unknown>>();
-  const queue: Record<string, unknown>[] = [];
-
-  const enqueue = (value: unknown) => {
-    if (!value) return;
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        enqueue(entry);
-      }
-      return;
-    }
-    if (typeof value === "object") {
-      queue.push(value as Record<string, unknown>);
-    }
-  };
-
-  enqueue(node.hasPart);
-  enqueue(node.teaches);
-  enqueue((node as { courseInstance?: unknown }).courseInstance);
-  enqueue(node.hasCourseInstance);
-  enqueue((node as { itemListElement?: unknown }).itemListElement);
-  enqueue((node as { hasCourseWork?: unknown }).hasCourseWork);
-  enqueue((node as { workExample?: unknown }).workExample);
-
-  let order = 0;
-
-  while (queue.length > 0) {
-    const entry = queue.shift()!;
-    if (visited.has(entry)) {
-      continue;
-    }
-    visited.add(entry);
-
-    const itemListElement = (entry as { itemListElement?: unknown })
-      .itemListElement;
-    if (itemListElement) {
-      enqueue(itemListElement);
-    }
-
-    const item = (entry as { item?: unknown }).item;
-    if (item) {
-      enqueue(item);
-    }
-
-    const subHasPart = (entry as { hasPart?: unknown }).hasPart;
-    if (subHasPart) {
-      enqueue(subHasPart);
-    }
-
-    const title = getFirstString(entry, ["name", "headline", "title"]);
-    if (!title) {
-      continue;
-    }
-
-    const durationIso = getFirstString(entry, [
-      "timeRequired",
-      "duration",
-      "typicalLearningTime",
-    ]);
-    let minutes = durationIso ? parseIsoDurationToMinutes(durationIso) : null;
-
-    if (minutes === null) {
-      const numericDuration = getFirstNumber(entry, [
-        "timeRequired",
-        "duration",
-        "time",
-      ]);
-      if (
-        typeof numericDuration === "number" &&
-        Number.isFinite(numericDuration)
-      ) {
-        minutes =
-          numericDuration > 0 && numericDuration < 10
-            ? Math.round(numericDuration * 60)
-            : Math.round(numericDuration);
-      }
-    }
-
-    if (
-      minutes === null &&
-      typeof entry.index === "number" &&
-      typeof entry.time === "number"
-    ) {
-      minutes = Math.max(0, Math.round(entry.time / 60));
-    }
-
-    const keywords = (entry as { keywords?: unknown }).keywords;
-    const description = getFirstString(entry, [
-      "description",
-      "about",
-      "summary",
-    ]);
-    const textForCode = [
-      title,
-      description || "",
-      Array.isArray(keywords)
-        ? keywords.join(" ")
-        : typeof keywords === "string"
-        ? keywords
-        : "",
-    ]
-      .join(" ")
-      .toLowerCase();
-    const usesCodeExample = /code|notebook|script|demo/.test(textForCode);
-
-    const positionValue = (entry as { position?: unknown }).position;
-    const indexValue = (entry as { index?: unknown }).index;
-    const position =
-      typeof positionValue === "number"
-        ? positionValue
-        : typeof indexValue === "number"
-        ? indexValue
-        : null;
-
-    outlineRaw.push({
-      title: sanitizeText(title),
-      duration: minutes && minutes > 0 ? minutes : 0,
-      usesCodeExample,
-      position,
-      order: order++,
-    });
-  }
-
-  if (outlineRaw.length === 0) {
-    return [];
-  }
-
-  const sorted = outlineRaw.sort((a, b) => {
-    if (a.position !== null && b.position !== null) {
-      return a.position - b.position;
-    }
-    if (a.position !== null) {
-      return -1;
-    }
-    if (b.position !== null) {
-      return 1;
-    }
-    return a.order - b.order;
-  });
-
-  const seenTitles = new Set<string>();
-  const outline: Array<{
-    title: string;
-    duration: number;
-    usesCodeExample: boolean;
-  }> = [];
-
-  for (const item of sorted) {
-    const key = item.title.toLowerCase();
-    if (seenTitles.has(key)) {
-      continue;
-    }
-    seenTitles.add(key);
-    outline.push({
-      title: item.title,
-      duration: item.duration,
-      usesCodeExample: item.usesCodeExample,
-    });
-  }
-
-  return outline;
 }
 
 function extractMetaDraft(html: string): PartialCourseDraft | null {
@@ -1141,24 +1021,6 @@ function sanitizeMultiline(value: string): string {
   }
 
   return normalized.join('\n').trim();
-}
-
-function splitSentences(value: string): string[] {
-  return value
-    .split(/[\.;\n]+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => sanitizeText(part));
-}
-
-function parseIsoDurationToMinutes(value: string): number | null {
-  const iso = value.trim();
-  const match = iso.match(/P(?:([0-9]+)D)?T?(?:([0-9]+)H)?(?:([0-9]+)M)?/i);
-  if (!match) return null;
-  const [, days, hours, minutes] = match;
-  const totalMinutes = (Number(days ?? 0) * 24 * 60) + (Number(hours ?? 0) * 60) + Number(minutes ?? 0);
-  if (Number.isNaN(totalMinutes)) return null;
-  return totalMinutes;
 }
 
 function decodeHtmlEntities(value: string): string {
