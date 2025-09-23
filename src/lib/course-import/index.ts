@@ -126,21 +126,47 @@ function extractCourseSuggestions(context: ExtractionContext): { suggestions: Co
   }
   warnings.push(...nextDataExtraction.warnings);
 
-  const htmlBodyExtraction = extractHtmlBodyDraft(context.html);
-  if (htmlBodyExtraction.draft) {
-    applyDraftToSuggestions(suggestions, htmlBodyExtraction.draft, 'medium', 'html-body');
+  const requiredAfterNext = [
+    "title",
+    "description",
+    "studentProfile",
+    "learningGoals",
+    "courseItems",
+    "instructors",
+    "duration",
+    "usesCodeExamples",
+    "url",
+  ] as const;
+  if (hasMissingSuggestions(suggestions, requiredAfterNext)) {
+    const htmlBodyExtraction = extractHtmlBodyDraft(context.html);
+    if (htmlBodyExtraction.draft) {
+      applyDraftToSuggestions(
+        suggestions,
+        htmlBodyExtraction.draft,
+        "medium",
+        "html-body"
+      );
+    }
+    warnings.push(...htmlBodyExtraction.warnings);
   }
-  warnings.push(...htmlBodyExtraction.warnings);
 
-  const metaDraft = extractMetaDraft(context.html);
-  if (metaDraft) {
-    applyDraftToSuggestions(suggestions, metaDraft, 'medium', 'meta');
+  const metaFallbackFields = [
+    "title",
+    "description",
+    "usesCodeExamples",
+  ] as const;
+  if (hasMissingSuggestions(suggestions, metaFallbackFields)) {
+    const metaDraft = extractMetaDraft(context.html);
+    if (metaDraft) {
+      applyDraftToSuggestions(suggestions, metaDraft, "medium", "meta");
+    }
   }
 
-  if (!suggestions.description.value) {
+  const documentTextFields = ["description"] as const;
+  if (hasMissingSuggestions(suggestions, documentTextFields)) {
     const textDraft = extractFromDocumentText(context.html);
     if (textDraft) {
-      applyDraftToSuggestions(suggestions, textDraft, 'low', 'text');
+      applyDraftToSuggestions(suggestions, textDraft, "low", "text");
     }
   }
 
@@ -619,6 +645,25 @@ function collectTextFromContainer(
 
   const text = sanitizeMultiline(container.text());
   return text || null;
+}
+
+function hasMissingSuggestions(
+  suggestions: CourseFieldSuggestions,
+  fields: readonly (keyof CourseFieldSuggestions)[]
+): boolean {
+  return fields.some((field) => {
+    const value = suggestions[field]?.value;
+    if (value === null || value === undefined) {
+      return true;
+    }
+    if (Array.isArray(value)) {
+      return value.length === 0;
+    }
+    if (typeof value === "string") {
+      return value.trim().length === 0;
+    }
+    return false;
+  });
 }
 
 type ExtractBlockOptions = {
