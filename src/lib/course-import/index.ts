@@ -5,8 +5,17 @@ import {
   CourseImportResult,
   ConfidenceLevel,
 } from '@/lib/course-import/types';
-import { load as loadCheerio, type CheerioAPI, type Cheerio } from 'cheerio';
-import type { AnyNode } from 'domhandler';
+import { getOpenAIApiKey } from "@/lib/utils/env";
+import { load as loadCheerio, type CheerioAPI, type Cheerio } from "cheerio";
+import type { AnyNode } from "domhandler";
+import { ChatOpenAI } from "@langchain/openai";
+import { HumanMessage, AIMessage } from "@langchain/core/messages";
+import {
+  ChatPromptTemplate,
+  MessagesPlaceholder,
+} from "@langchain/core/prompts";
+import { z } from "zod";
+import { readPromptFile } from "@/lib/course-import/ai-extraction/prompts";
 
 const CONFIDENCE_ORDER: Record<ConfidenceLevel, number> = {
   low: 0,
@@ -17,7 +26,11 @@ const CONFIDENCE_ORDER: Record<ConfidenceLevel, number> = {
 type PartialCourseDraft = Partial<CourseInput> & {
   learningGoals?: string[];
   instructors?: Array<{ name: string; title: string }>;
-  courseItems?: Array<{ title: string; duration: number; usesCodeExample: boolean }>;
+  courseItems?: Array<{
+    title: string;
+    duration: number;
+    usesCodeExample: boolean;
+  }>;
 };
 
 type ExtractionContext = {
@@ -27,23 +40,102 @@ type ExtractionContext = {
 
 type CheerioSelection = Cheerio<AnyNode>;
 
-export async function importCourseFromUrl(url: string): Promise<CourseImportResult> {
+const CourseExtractionSchema = z.object({
+  title: z.string().nullish().describe("The title of the course."),
+  description: z
+    .string()
+    .nullish()
+    .describe(
+      "The description of the course. On the course web page this is often in the section 'About this course' section."
+    ),
+  studentProfile: z
+    .string()
+    .nullish()
+    .describe(
+      "A description of the student profile. On the course web page this is often in the section 'Who should join' section."
+    ),
+  learningGoals: z
+    .array(z.string())
+    .nullish()
+    .describe(
+      'The learning goals of the course. On the course web page this is often in the section "What you\'ll learn" section.'
+    ),
+  difficulty: z
+    .string()
+    .nullish()
+    .describe(
+      "The difficulty level of the course. On the course web page this is often in the section 'summary-card' section that lists the course title, difficulty level, duration, number of courses, and instructor."
+    ),
+  durationMinutes: z
+    .number()
+    .nullish()
+    .describe(
+      "The duration of the course in minutes. On the course web page this is often in the section 'summary-card' section that lists the course title, difficulty level, duration, number of courses, and instructor."
+    ),
+  usesCodeExamples: z
+    .boolean()
+    .nullish()
+    .describe(
+      "Whether the course uses code examples. On the course web page this is reflected by the presence of any course items that use code examples (listed in the 'Course Outline' section)."
+    ),
+  instructors: z
+    .array(
+      z.object({
+        name: z.string().nullish().describe("The name of the instructor"),
+        title: z.string().nullish().describe("The title of the instructor"),
+      })
+    )
+    .nullish()
+    .describe(
+      "The list of instructors for the course. On the course web page this is often in the 'Instructors' section."
+    ),
+  courseItems: z
+    .array(
+      z.object({
+        title: z.string().nullish().describe("The title of the course item"),
+        durationMinutes: z
+          .number()
+          .nullish()
+          .describe("The duration of the course item in minutes"),
+        usesCodeExample: z
+          .boolean()
+          .nullish()
+          .describe("Whether the course item uses code examples"),
+      })
+    )
+    .nullish()
+    .describe(
+      "The list of course items for the course. On the course web page this is often in the 'Course Outline' section."
+    ),
+  url: z.string().nullish().describe("The URL of the course"),
+});
+
+type CourseExtractionRecord = z.infer<typeof CourseExtractionSchema>;
+
+export async function importCourseFromUrl(
+  url: string
+): Promise<CourseImportResult> {
   const normalizedUrl = normalizeUrl(url);
   const fetchStart = Date.now();
   const { html, contentType } = await fetchCoursePage(normalizedUrl);
   const fetchMs = Date.now() - fetchStart;
 
   const extractStart = Date.now();
-  const { suggestions, warnings: extractionWarnings } = extractCourseSuggestions({ html, url: normalizedUrl });
+  const { suggestions, warnings: extractionWarnings } =
+    await extractCourseSuggestions({
+      html,
+      url: normalizedUrl,
+    });
   const extractMs = Date.now() - extractStart;
 
   const normalizeStart = Date.now();
-  const { course, warnings: normalizationWarnings } = normalizeCourseSuggestions(suggestions, normalizedUrl);
+  const { course, warnings: normalizationWarnings } =
+    normalizeCourseSuggestions(suggestions, normalizedUrl);
   const normalizeMs = Date.now() - normalizeStart;
 
   const warnings = [...extractionWarnings, ...normalizationWarnings];
 
-  console.info('[course-import] Completed import', {
+  console.info("[course-import] Completed import", {
     url: normalizedUrl,
     warnings: warnings.length,
     timings: { fetchMs, extractMs, normalizeMs },
@@ -56,7 +148,7 @@ export async function importCourseFromUrl(url: string): Promise<CourseImportResu
     metadata: {
       contentType,
       fetchedAt: new Date().toISOString(),
-      htmlBytes: Buffer.byteLength(html, 'utf8'),
+      htmlBytes: Buffer.byteLength(html, "utf8"),
       timings: {
         fetchMs,
         extractMs,
@@ -72,31 +164,39 @@ function normalizeUrl(input: string): string {
     const url = new URL(input);
     return url.toString();
   } catch {
-    throw new CourseImportError('FETCH_FAILED', 'Invalid URL provided');
+    throw new CourseImportError("FETCH_FAILED", "Invalid URL provided");
   }
 }
 
-async function fetchCoursePage(url: string): Promise<{ html: string; contentType: string | null }> {
+async function fetchCoursePage(
+  url: string
+): Promise<{ html: string; contentType: string | null }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'CourseImporterBot/1.0 (+https://event-matcher-admin)',
-        Accept: 'text/html,application/xhtml+xml',
+        "User-Agent": "CourseImporterBot/1.0 (+https://event-matcher-admin)",
+        Accept: "text/html,application/xhtml+xml",
       },
-      redirect: 'follow',
+      redirect: "follow",
       signal: controller.signal,
     });
 
     if (!response.ok) {
-      throw new CourseImportError('FETCH_FAILED', `Received status ${response.status} from source`);
+      throw new CourseImportError(
+        "FETCH_FAILED",
+        `Received status ${response.status} from source`
+      );
     }
 
-    const contentType = response.headers.get('content-type');
-    if (contentType && !contentType.includes('text/html')) {
-      throw new CourseImportError('UNSUPPORTED_CONTENT', 'The provided URL did not return HTML content');
+    const contentType = response.headers.get("content-type");
+    if (contentType && !contentType.includes("text/html")) {
+      throw new CourseImportError(
+        "UNSUPPORTED_CONTENT",
+        "The provided URL did not return HTML content"
+      );
     }
 
     const html = await response.text();
@@ -106,23 +206,36 @@ async function fetchCoursePage(url: string): Promise<{ html: string; contentType
       throw error;
     }
 
-    if ((error as Error).name === 'AbortError') {
-      throw new CourseImportError('FETCH_FAILED', 'Timed out while fetching the course page');
+    if ((error as Error).name === "AbortError") {
+      throw new CourseImportError(
+        "FETCH_FAILED",
+        "Timed out while fetching the course page"
+      );
     }
 
-    throw new CourseImportError('FETCH_FAILED', 'Failed to fetch the course page');
+    throw new CourseImportError(
+      "FETCH_FAILED",
+      "Failed to fetch the course page"
+    );
   } finally {
     clearTimeout(timeout);
   }
 }
 
-function extractCourseSuggestions(context: ExtractionContext): { suggestions: CourseFieldSuggestions; warnings: string[] } {
+async function extractCourseSuggestions(
+  context: ExtractionContext
+): Promise<{ suggestions: CourseFieldSuggestions; warnings: string[] }> {
   const suggestions = createEmptySuggestions(context.url);
   const warnings: string[] = [];
 
   const nextDataExtraction = extractNextDataDraft(context.html);
   if (nextDataExtraction.draft) {
-    applyDraftToSuggestions(suggestions, nextDataExtraction.draft, 'high', 'next-data');
+    applyDraftToSuggestions(
+      suggestions,
+      nextDataExtraction.draft,
+      "high",
+      "next-data"
+    );
   }
   warnings.push(...nextDataExtraction.warnings);
 
@@ -162,6 +275,31 @@ function extractCourseSuggestions(context: ExtractionContext): { suggestions: Co
     }
   }
 
+  const llmFallbackFields = [
+    "title",
+    "description",
+    "studentProfile",
+    "learningGoals",
+    "courseItems",
+    "instructors",
+    "duration",
+    "usesCodeExamples",
+    "difficulty",
+  ] as const;
+
+  if (hasMissingSuggestions(suggestions, llmFallbackFields)) {
+    const llmExtraction = await extractWithLLM(context);
+    if (llmExtraction.draft) {
+      applyDraftToSuggestions(
+        suggestions,
+        llmExtraction.draft,
+        "medium",
+        "llm"
+      );
+    }
+    warnings.push(...llmExtraction.warnings);
+  }
+
   const documentTextFields = ["description"] as const;
   if (hasMissingSuggestions(suggestions, documentTextFields)) {
     const textDraft = extractFromDocumentText(context.html);
@@ -173,8 +311,13 @@ function extractCourseSuggestions(context: ExtractionContext): { suggestions: Co
   return { suggestions, warnings };
 }
 
-function extractNextDataDraft(html: string): { draft: PartialCourseDraft | null; warnings: string[] } {
-  const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+function extractNextDataDraft(html: string): {
+  draft: PartialCourseDraft | null;
+  warnings: string[];
+} {
+  const match = html.match(
+    /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/
+  );
   if (!match) {
     return { draft: null, warnings: [] };
   }
@@ -182,35 +325,41 @@ function extractNextDataDraft(html: string): { draft: PartialCourseDraft | null;
   try {
     const payload = JSON.parse(decodeHtmlEntities(match[1]));
     const pageProps = payload?.props?.pageProps;
-    if (!pageProps || typeof pageProps !== 'object') {
-      return { draft: null, warnings: ['Next.js payload missing pageProps'] };
+    if (!pageProps || typeof pageProps !== "object") {
+      return { draft: null, warnings: ["Next.js payload missing pageProps"] };
     }
 
     const course = (pageProps as { course?: unknown }).course;
     const outlineListRaw = (pageProps as { outlineList?: unknown }).outlineList;
 
-    if (!course || typeof course !== 'object') {
-      return { draft: null, warnings: ['Next.js payload missing course data'] };
+    if (!course || typeof course !== "object") {
+      return { draft: null, warnings: ["Next.js payload missing course data"] };
     }
 
     const courseRecord = course as Record<string, unknown>;
     const draft: PartialCourseDraft = {};
     const warnings: string[] = [];
 
-    if (typeof courseRecord.title === 'string') {
+    if (typeof courseRecord.title === "string") {
       draft.title = sanitizeText(courseRecord.title);
     } else {
-      warnings.push('Course title missing in Next.js payload');
+      warnings.push("Course title missing in Next.js payload");
     }
 
     const seo = courseRecord.seo as Record<string, unknown> | undefined;
-    const layout = Array.isArray((courseRecord.visualEditor as { pageLayout?: unknown })?.pageLayout)
-      ? ((courseRecord.visualEditor as { pageLayout: Array<Record<string, unknown>> }).pageLayout)
+    const layout = Array.isArray(
+      (courseRecord.visualEditor as { pageLayout?: unknown })?.pageLayout
+    )
+      ? (
+          courseRecord.visualEditor as {
+            pageLayout: Array<Record<string, unknown>>;
+          }
+        ).pageLayout
       : [];
 
     const heroBlock = findHeroBlock(layout);
     if (heroBlock) {
-      if (typeof heroBlock.level === 'string') {
+      if (typeof heroBlock.level === "string") {
         const level = normalizeDifficulty(heroBlock.level);
         if (level) {
           draft.difficulty = level;
@@ -220,39 +369,57 @@ function extractNextDataDraft(html: string): { draft: PartialCourseDraft | null;
 
     const aboutBlock = findBlockByTitle(layout, /about this course/i);
     if (aboutBlock) {
-      const text = extractBlockText(aboutBlock.body, { preserveLineBreaks: true });
+      const text = extractBlockText(aboutBlock.body, {
+        preserveLineBreaks: true,
+      });
       if (text) {
         draft.description = text;
       }
     }
 
-    if (!draft.description && typeof seo?.metaDesc === 'string') {
+    if (!draft.description && typeof seo?.metaDesc === "string") {
       draft.description = sanitizeText(seo.metaDesc);
     }
 
-    if (!draft.description && typeof courseRecord.content === 'string') {
-      const text = extractBlockText(courseRecord.content, { preserveLineBreaks: true });
+    if (!draft.description && typeof courseRecord.content === "string") {
+      const text = extractBlockText(courseRecord.content, {
+        preserveLineBreaks: true,
+      });
       if (text) {
         draft.description = text;
       }
     }
 
-    const audienceBlock = findBlockByTitle(layout, /(who should join|who is this course for)/i);
+    const audienceBlock = findBlockByTitle(
+      layout,
+      /(who should join|who is this course for)/i
+    );
     if (audienceBlock) {
-      const text = extractBlockText(audienceBlock.body, { preserveLineBreaks: true });
+      const text = extractBlockText(audienceBlock.body, {
+        preserveLineBreaks: true,
+      });
       if (text) {
         draft.studentProfile = text;
       }
     }
 
-    const featuresBlock = layout.find((block) => Array.isArray((block as Record<string, unknown>).featuresGrid)) as
-      | (Record<string, unknown> & { featuresGrid: Array<Record<string, unknown>> })
+    const featuresBlock = layout.find((block) =>
+      Array.isArray((block as Record<string, unknown>).featuresGrid)
+    ) as
+      | (Record<string, unknown> & {
+          featuresGrid: Array<Record<string, unknown>>;
+        })
       | undefined;
 
     if (featuresBlock) {
       const goals = featuresBlock.featuresGrid
         .map((feature) => {
-          const value = typeof feature.feature === 'string' ? feature.feature : typeof feature.featureReachText === 'string' ? feature.featureReachText : '';
+          const value =
+            typeof feature.feature === "string"
+              ? feature.feature
+              : typeof feature.featureReachText === "string"
+              ? feature.featureReachText
+              : "";
           const text = extractBlockText(value);
           return text;
         })
@@ -263,23 +430,44 @@ function extractNextDataDraft(html: string): { draft: PartialCourseDraft | null;
       }
     }
 
-    const shortCourse = courseRecord.shortCourse as Record<string, unknown> | undefined;
+    const shortCourse = courseRecord.shortCourse as
+      | Record<string, unknown>
+      | undefined;
     if (shortCourse && Array.isArray(shortCourse.instructors)) {
       const instructors = shortCourse.instructors
         .map((entry) => {
-          if (!entry || typeof entry !== 'object') return null;
+          if (!entry || typeof entry !== "object") return null;
           const node = entry as Record<string, unknown>;
-          const instructor = node.instructor as Record<string, unknown> | undefined;
+          const instructor = node.instructor as
+            | Record<string, unknown>
+            | undefined;
           if (!instructor) return null;
-          const name = typeof instructor.title === 'string' ? sanitizeText(instructor.title) : null;
+          const name =
+            typeof instructor.title === "string"
+              ? sanitizeText(instructor.title)
+              : null;
           if (!name) return null;
-          const person = instructor.person as Record<string, unknown> | undefined;
-          const jobTitleRich = person && typeof person.jobTitleRichText === 'string' ? person.jobTitleRichText : null;
-          const jobTitlePlain = person && typeof person.jobTitle === 'string' ? person.jobTitle : null;
-          const titleText = jobTitleRich ? extractBlockText(jobTitleRich) : jobTitlePlain ? sanitizeText(jobTitlePlain) : '';
-          return { name, title: titleText || 'Instructor' };
+          const person = instructor.person as
+            | Record<string, unknown>
+            | undefined;
+          const jobTitleRich =
+            person && typeof person.jobTitleRichText === "string"
+              ? person.jobTitleRichText
+              : null;
+          const jobTitlePlain =
+            person && typeof person.jobTitle === "string"
+              ? person.jobTitle
+              : null;
+          const titleText = jobTitleRich
+            ? extractBlockText(jobTitleRich)
+            : jobTitlePlain
+            ? sanitizeText(jobTitlePlain)
+            : "";
+          return { name, title: titleText || "Instructor" };
         })
-        .filter((instructor): instructor is { name: string; title: string } => Boolean(instructor));
+        .filter((instructor): instructor is { name: string; title: string } =>
+          Boolean(instructor)
+        );
 
       if (instructors.length > 0) {
         draft.instructors = instructors;
@@ -287,7 +475,9 @@ function extractNextDataDraft(html: string): { draft: PartialCourseDraft | null;
     }
 
     const outlineEntries = Array.isArray(outlineListRaw)
-      ? (outlineListRaw as Array<Record<string, unknown>>).filter((item) => item && typeof item === 'object')
+      ? (outlineListRaw as Array<Record<string, unknown>>).filter(
+          (item) => item && typeof item === "object"
+        )
       : [];
 
     if (outlineEntries.length > 0) {
@@ -332,15 +522,21 @@ function extractNextDataDraft(html: string): { draft: PartialCourseDraft | null;
       }
     }
 
-    if (!draft.studentProfile && typeof courseRecord.content === 'string') {
-      const maybeAudience = extractSectionFromContent(courseRecord.content, /(who should join|who is this course for)/i);
+    if (!draft.studentProfile && typeof courseRecord.content === "string") {
+      const maybeAudience = extractSectionFromContent(
+        courseRecord.content,
+        /(who should join|who is this course for)/i
+      );
       if (maybeAudience) {
         draft.studentProfile = maybeAudience;
       }
     }
 
-    if (!draft.learningGoals && typeof courseRecord.content === 'string') {
-      const bulletGoals = extractListItemsFromContent(courseRecord.content, /(what you'll learn|what you will learn|you will learn|learning objectives)/i);
+    if (!draft.learningGoals && typeof courseRecord.content === "string") {
+      const bulletGoals = extractListItemsFromContent(
+        courseRecord.content,
+        /(what you'll learn|what you will learn|you will learn|learning objectives)/i
+      );
       if (bulletGoals.length > 0) {
         draft.learningGoals = bulletGoals;
       }
@@ -351,37 +547,56 @@ function extractNextDataDraft(html: string): { draft: PartialCourseDraft | null;
       if (draft.description) textParts.push(draft.description);
       if (draft.studentProfile) textParts.push(draft.studentProfile);
       if (draft.learningGoals) textParts.push(...draft.learningGoals);
-      if (draft.courseItems) textParts.push(...draft.courseItems.map((item) => item.title));
-      const combined = textParts.join(' ').toLowerCase();
-      if (combined.includes('code')) {
+      if (draft.courseItems)
+        textParts.push(...draft.courseItems.map((item) => item.title));
+      const combined = textParts.join(" ").toLowerCase();
+      if (combined.includes("code")) {
         draft.usesCodeExamples = true;
       }
     }
 
     return { draft, warnings };
   } catch {
-    return { draft: null, warnings: ['Failed to parse Next.js course payload'] };
+    return {
+      draft: null,
+      warnings: ["Failed to parse Next.js course payload"],
+    };
   }
 }
 
-function findHeroBlock(blocks: Array<Record<string, unknown>>): Record<string, unknown> | undefined {
-  return blocks.find((block) => block && typeof block === 'object' && ('level' in block || 'duration' in block));
+function findHeroBlock(
+  blocks: Array<Record<string, unknown>>
+): Record<string, unknown> | undefined {
+  return blocks.find(
+    (block) =>
+      block &&
+      typeof block === "object" &&
+      ("level" in block || "duration" in block)
+  );
 }
 
-function findBlockByTitle(blocks: Array<Record<string, unknown>>, matcher: RegExp): (Record<string, unknown> & { title?: unknown; body?: unknown }) | undefined {
+function findBlockByTitle(
+  blocks: Array<Record<string, unknown>>,
+  matcher: RegExp
+): (Record<string, unknown> & { title?: unknown; body?: unknown }) | undefined {
   return blocks.find((block) => {
-    if (!block || typeof block !== 'object') return false;
+    if (!block || typeof block !== "object") return false;
     const title = block.title;
-    return typeof title === 'string' && matcher.test(title);
-  }) as (Record<string, unknown> & { title?: unknown; body?: unknown }) | undefined;
+    return typeof title === "string" && matcher.test(title);
+  }) as
+    | (Record<string, unknown> & { title?: unknown; body?: unknown })
+    | undefined;
 }
 
-function extractHtmlBodyDraft(html: string): { draft: PartialCourseDraft | null; warnings: string[] } {
+function extractHtmlBodyDraft(html: string): {
+  draft: PartialCourseDraft | null;
+  warnings: string[];
+} {
   const $ = loadCheerio(html);
   const draft: PartialCourseDraft = {};
   const warnings: string[] = [];
 
-  const headingTitle = sanitizeText($('h1').first().text());
+  const headingTitle = sanitizeText($("h1").first().text());
   if (headingTitle) {
     draft.title = headingTitle;
   }
@@ -391,12 +606,15 @@ function extractHtmlBodyDraft(html: string): { draft: PartialCourseDraft | null;
     draft.description = description;
   }
 
-  const studentProfile = extractSectionText($, /(who should join|who is this course for)/i);
+  const studentProfile = extractSectionText(
+    $,
+    /(who should join|who is this course for)/i
+  );
   if (studentProfile) {
     draft.studentProfile = studentProfile;
   }
 
-  const learningGoals = extractSectionListItems($, '#features-grid');
+  const learningGoals = extractSectionListItems($, "#features-grid");
   if (learningGoals.length > 0) {
     draft.learningGoals = learningGoals;
   }
@@ -427,26 +645,28 @@ function extractHtmlBodyDraft(html: string): { draft: PartialCourseDraft | null;
   return { draft, warnings };
 }
 
-function extractCourseOutlineFromRoot(
-  $: CheerioAPI
-): {
+function extractCourseOutlineFromRoot($: CheerioAPI): {
   items: Array<{ title: string; duration: number; usesCodeExample: boolean }>;
   codeExampleCount: number;
   totalDuration: number;
 } {
-  const items: Array<{ title: string; duration: number; usesCodeExample: boolean }> = [];
+  const items: Array<{
+    title: string;
+    duration: number;
+    usesCodeExample: boolean;
+  }> = [];
   let codeExampleCount = 0;
 
-  const anchor = $('#course-outline');
+  const anchor = $("#course-outline");
   if (!anchor.length) {
     return { items, codeExampleCount, totalDuration: 0 };
   }
 
-  const followingDivs = anchor.nextAll('div');
+  const followingDivs = anchor.nextAll("div");
 
   const summaryContainer = followingDivs
     .filter((_, el) => {
-      const heading = $(el).find('h2').first();
+      const heading = $(el).find("h2").first();
       return heading.length > 0 && /course outline/i.test(heading.text());
     })
     .first();
@@ -460,7 +680,9 @@ function extractCourseOutlineFromRoot(
   }
 
   const lessonsContainer = followingDivs
-    .filter((_, el) => $(el).find('ul[data-sentry-component="Lessons"]').length > 0)
+    .filter(
+      (_, el) => $(el).find('ul[data-sentry-component="Lessons"]').length > 0
+    )
     .first();
 
   if (!lessonsContainer.length) {
@@ -468,33 +690,33 @@ function extractCourseOutlineFromRoot(
   }
 
   const lessonsList = lessonsContainer
-    .find('ul[data-sentry-component="Lessons"]').first();
+    .find('ul[data-sentry-component="Lessons"]')
+    .first();
 
-  lessonsList
-    .children('li')
-    .each((_, li) => {
-      const element = $(li);
-      const title = sanitizeText(
-        element.find('p.text-base').first().text() || element.find('p').first().text()
-      );
-      if (!title) {
-        return;
-      }
+  lessonsList.children("li").each((_, li) => {
+    const element = $(li);
+    const title = sanitizeText(
+      element.find("p.text-base").first().text() ||
+        element.find("p").first().text()
+    );
+    if (!title) {
+      return;
+    }
 
-      const detailText = sanitizeText(element.find('p.text-sm').first().text());
-      let duration = parseDurationFromDisplay(detailText);
-      if (duration === null) {
-        duration = parseDurationFromDisplay(sanitizeText(element.text()));
-      }
+    const detailText = sanitizeText(element.find("p.text-sm").first().text());
+    let duration = parseDurationFromDisplay(detailText);
+    if (duration === null) {
+      duration = parseDurationFromDisplay(sanitizeText(element.text()));
+    }
 
-      const usesCodeExample = /code|notebook|script|demo/i.test(detailText);
+    const usesCodeExample = /code|notebook|script|demo/i.test(detailText);
 
-      items.push({
-        title,
-        duration: duration && duration > 0 ? duration : 0,
-        usesCodeExample,
-      });
+    items.push({
+      title,
+      duration: duration && duration > 0 ? duration : 0,
+      usesCodeExample,
     });
+  });
 
   const totalDuration = items.reduce((acc, item) => acc + item.duration, 0);
 
@@ -504,13 +726,13 @@ function extractCourseOutlineFromRoot(
 function extractInstructorsFromRoot(
   $: CheerioAPI
 ): Array<{ name: string; title: string }> {
-  const anchor = $('#instructors');
+  const anchor = $("#instructors");
   if (!anchor.length) {
     return [];
   }
 
   const heading = anchor
-    .nextAll('h2')
+    .nextAll("h2")
     .filter((_, el) => /instructor/i.test($(el).text()))
     .first();
 
@@ -519,7 +741,7 @@ function extractInstructorsFromRoot(
   }
 
   let cardsContainer = heading.next();
-  while (cardsContainer.length && cardsContainer[0].type !== 'tag') {
+  while (cardsContainer.length && cardsContainer[0].type !== "tag") {
     cardsContainer = cardsContainer.next();
   }
 
@@ -530,25 +752,166 @@ function extractInstructorsFromRoot(
   const instructors: Array<{ name: string; title: string }> = [];
 
   cardsContainer
-    .find('div')
-    .filter((_, el) => $(el).find('h3').length > 0)
+    .find("div")
+    .filter((_, el) => $(el).find("h3").length > 0)
     .each((_, card) => {
       const cardEl = $(card);
-      const name = sanitizeText(cardEl.find('h3').first().text());
+      const name = sanitizeText(cardEl.find("h3").first().text());
       if (!name) {
         return;
       }
-      const title = sanitizeText(cardEl.find('#instructor-title').first().text()) || 'Instructor';
+      const title =
+        sanitizeText(cardEl.find("#instructor-title").first().text()) ||
+        "Instructor";
       instructors.push({ name, title });
     });
 
   return instructors;
 }
 
-function extractSectionText(
-  $: CheerioAPI,
-  matcher: RegExp
-): string | null {
+async function extractWithLLM(
+  context: ExtractionContext
+): Promise<{ draft: PartialCourseDraft | null; warnings: string[] }> {
+  const warnings: string[] = [];
+
+  try {
+    getOpenAIApiKey();
+  } catch {
+    warnings.push("LLM extraction skipped: OPENAI_API_KEY is not configured");
+    return { draft: null, warnings };
+  }
+
+  try {
+    const llm = new ChatOpenAI({
+      model: process.env.LLM_EXTRACTION_MODEL,
+    }).withStructuredOutput(CourseExtractionSchema);
+
+    const promptTemplate = ChatPromptTemplate.fromMessages([
+      ["system", "{sys_prompt}"],
+      new MessagesPlaceholder("examples"),
+      ["human", "{html}"],
+    ]);
+    const [
+      SYS_PROMPT,
+      EXAMPLE_1_HUMAN,
+      EXAMPLE_1_AI,
+      EXAMPLE_2_HUMAN,
+      EXAMPLE_2_AI,
+    ] = await Promise.all([
+      readPromptFile("sys_prompt.md"),
+      readPromptFile("example-1-human.md"),
+      readPromptFile("example-1-ai.md"),
+      readPromptFile("example-2-human.md"),
+      readPromptFile("example-2-ai.md"),
+    ]);
+    const prompt = await promptTemplate.invoke({
+      sys_prompt: SYS_PROMPT,
+      examples: [
+        new HumanMessage({ content: EXAMPLE_1_HUMAN }),
+        new AIMessage({ content: EXAMPLE_1_AI }),
+        new HumanMessage({ content: EXAMPLE_2_HUMAN }),
+        new AIMessage({ content: EXAMPLE_2_AI }),
+      ],
+      html: `Now perform the extraction on this page's HTML:\n\n${context.html}`,
+    });
+
+    const courseData = await llm.invoke(prompt);
+
+    const draft = convertExtractionRecord(courseData, context.url);
+    return { draft, warnings };
+  } catch (error) {
+    console.error("LLM extraction failed", error);
+    warnings.push("LLM extraction failed");
+    return { draft: null, warnings };
+  }
+}
+
+function convertExtractionRecord(
+  record: CourseExtractionRecord,
+  fallbackUrl: string
+): PartialCourseDraft {
+  const draft: PartialCourseDraft = {};
+
+  if (record.title) {
+    draft.title = sanitizeText(record.title);
+  }
+
+  if (record.description) {
+    draft.description = sanitizeMultiline(record.description);
+  }
+
+  if (record.studentProfile) {
+    draft.studentProfile = sanitizeMultiline(record.studentProfile);
+  }
+
+  if (record.learningGoals && record.learningGoals.length > 0) {
+    draft.learningGoals = record.learningGoals
+      .map((goal) => sanitizeText(goal))
+      .filter(Boolean);
+  }
+
+  if (record.difficulty) {
+    const normalizedDifficulty = normalizeDifficulty(record.difficulty);
+    if (normalizedDifficulty) {
+      draft.difficulty = normalizedDifficulty;
+    }
+  }
+
+  const llmCourseItems =
+    record.courseItems
+      ?.map((item) => {
+        const title = sanitizeText(item.title ?? "");
+        if (!title) return null;
+        const duration =
+          item.durationMinutes ?? parseDurationNumber(item.durationMinutes);
+        return {
+          title,
+          duration: duration && duration > 0 ? duration : 0,
+          usesCodeExample: item.usesCodeExample ?? false,
+        };
+      })
+      .filter(
+        (
+          item
+        ): item is {
+          title: string;
+          duration: number;
+          usesCodeExample: boolean;
+        } => Boolean(item)
+      ) ?? [];
+
+  if (llmCourseItems.length > 0) {
+    draft.courseItems = llmCourseItems;
+  }
+
+  const llmDuration = record.durationMinutes ?? sumDurations(llmCourseItems);
+  if (llmDuration && llmDuration > 0) {
+    draft.duration = Math.round(llmDuration);
+  }
+
+  if (typeof record.usesCodeExamples === "boolean") {
+    draft.usesCodeExamples = record.usesCodeExamples;
+  } else if (llmCourseItems.some((item) => item.usesCodeExample)) {
+    draft.usesCodeExamples = true;
+  }
+
+  if (record.instructors && record.instructors.length > 0) {
+    draft.instructors = record.instructors
+      .map((inst) => ({
+        name: sanitizeText(inst.name),
+        title: sanitizeText(inst.title ?? ""),
+      }))
+      .filter((inst) => inst.name);
+  }
+
+  if (record.url || fallbackUrl) {
+    draft.url = record.url ?? fallbackUrl;
+  }
+
+  return draft;
+}
+
+function extractSectionText($: CheerioAPI, matcher: RegExp): string | null {
   const container = findSectionContainer($, matcher);
   if (!container || !container.length) {
     return null;
@@ -559,22 +922,26 @@ function extractSectionText(
 
 function extractSectionListItems(
   $: CheerioAPI,
-  matcher: string
+  matcher: RegExp | string
 ): string[] {
-  const container = findSectionContainer($, matcher);
+  let container: CheerioSelection | null;
+  if (typeof matcher === "string") {
+    const selection = $(matcher);
+    container = selection.length ? (selection as CheerioSelection) : null;
+  } else {
+    container = findSectionContainer($, matcher);
+  }
   if (!container || !container.length) {
     return [];
   }
 
   const items: string[] = [];
-  container
-    .find('li')
-    .each((_, li) => {
-      const text = sanitizeText($(li).text());
-      if (text) {
-        items.push(text);
-      }
-    });
+  container.find("li").each((_, li) => {
+    const text = sanitizeText($(li).text());
+    if (text) {
+      items.push(text);
+    }
+  });
 
   return items;
 }
@@ -583,12 +950,12 @@ function findSectionContainer(
   $: CheerioAPI,
   matcher: RegExp | string
 ): CheerioSelection | null {
-  if (typeof matcher === 'string') {
+  if (typeof matcher === "string") {
     const matchingNode = $(matcher).first();
-    return matchingNode.length ? matchingNode as CheerioSelection : null;
+    return matchingNode.length ? (matchingNode as CheerioSelection) : null;
   }
 
-  const heading = $('h2')
+  const heading = $("h2")
     .filter((_, el) => matcher.test($(el).text().trim()))
     .first();
 
@@ -596,14 +963,14 @@ function findSectionContainer(
     return null;
   }
 
-  const proseSibling = heading.nextAll('.prose').first();
+  const proseSibling = heading.nextAll(".prose").first();
   if (proseSibling.length) {
     return proseSibling as CheerioSelection;
   }
 
-  const sectionCard = heading.closest('div');
+  const sectionCard = heading.closest("div");
   if (sectionCard.length) {
-    const nestedProse = sectionCard.find('.prose').first();
+    const nestedProse = sectionCard.find(".prose").first();
     if (nestedProse.length) {
       return nestedProse as CheerioSelection;
     }
@@ -611,7 +978,7 @@ function findSectionContainer(
 
   const nextElement = heading
     .nextAll()
-    .filter((_, el) => el.type === 'tag')
+    .filter((_, el) => el.type === "tag")
     .first();
   if (nextElement.length) {
     return nextElement as CheerioSelection;
@@ -630,7 +997,7 @@ function collectTextFromContainer(
 
   const paragraphs: string[] = [];
   container
-    .find('p,li')
+    .find("p,li")
     .toArray()
     .forEach((el) => {
       const text = sanitizeText($(el).text());
@@ -640,11 +1007,33 @@ function collectTextFromContainer(
     });
 
   if (paragraphs.length > 0) {
-    return sanitizeMultiline(paragraphs.join('\n\n'));
+    return sanitizeMultiline(paragraphs.join("\n\n"));
   }
 
   const text = sanitizeMultiline(container.text());
   return text || null;
+}
+
+function parseDurationNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const numeric = Number.parseFloat(value);
+    if (!Number.isNaN(numeric)) {
+      return numeric;
+    }
+    return parseDurationFromDisplay(value);
+  }
+  return null;
+}
+
+function sumDurations(items: Array<{ duration: number }>): number {
+  return items.reduce(
+    (total, item) =>
+      total + (Number.isFinite(item.duration) ? item.duration : 0),
+    0
+  );
 }
 
 function hasMissingSuggestions(
