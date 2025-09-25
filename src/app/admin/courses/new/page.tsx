@@ -31,6 +31,19 @@ const schema = CourseInputSchema;
 
 type FormValues = z.infer<typeof schema>;
 
+const DEFAULT_VALUES: FormValues = {
+  title: '',
+  description: '',
+  duration: 0,
+  studentProfile: '',
+  learningGoals: [''],
+  difficulty: 'Beginner',
+  instructors: [{ name: '', title: '' }],
+  courseItems: [{ title: '', duration: 0, usesCodeExample: false }],
+  usesCodeExamples: false,
+  url: '',
+};
+
 export default function NewCoursePage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [importUrl, setImportUrl] = useState('');
@@ -60,23 +73,25 @@ export default function NewCoursePage() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema) as Resolver<FormValues>,
-    defaultValues: {
-      title: '',
-      description: '',
-      duration: 0,
-      studentProfile: '',
-      learningGoals: [''],
-      difficulty: 'Beginner',
-      instructors: [{ name: '', title: '' }],
-      courseItems: [{ title: '', duration: 0, usesCodeExample: false }],
-      usesCodeExamples: false,
-      url: '',
-    },
+    defaultValues: DEFAULT_VALUES,
     mode: 'onChange',
   });
 
   const instructorsArray = useFieldArray({ control: form.control, name: 'instructors' });
   const courseItemsArray = useFieldArray({ control: form.control, name: 'courseItems' });
+ 
+  const resetForm = () => {
+    // Reset RHF state and reinitialize field arrays for consistent UI
+    form.reset(DEFAULT_VALUES);
+    instructorsArray.replace(DEFAULT_VALUES.instructors);
+    courseItemsArray.replace(DEFAULT_VALUES.courseItems);
+    setFieldConfidence({});
+    // Also clear importer state
+    setImportUrl('');
+    setImportStatus('idle');
+    setImportError(null);
+    setImportWarnings([]);
+  };
 
   const applyCourseImport = (result: CourseImportResult) => {
     const { course, warnings } = result;
@@ -230,7 +245,7 @@ export default function NewCoursePage() {
       }
 
       showToast('success', 'Course created successfully');
-      form.reset();
+      resetForm();
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Unexpected error';
       showToast('error', message);
@@ -309,39 +324,74 @@ export default function NewCoursePage() {
 
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="title"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center justify-between">
-                      <span>Title</span>
-                      {renderConfidenceBadge('title')}
-                    </FormLabel>
-                    <FormControl>
-                      <Input placeholder="Course title" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
-                  name="difficulty"
+                  name="title"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="flex items-center justify-between">
-                        <span>Difficulty</span>
-                        {renderConfidenceBadge('difficulty')}
+                        <span>Title</span>
+                        {renderConfidenceBadge('title')}
                       </FormLabel>
                       <FormControl>
-                        <select className="border rounded-md h-9 px-3" {...field}>
-                          <option value="Beginner">Beginner</option>
-                          <option value="Intermediate">Intermediate</option>
-                          <option value="Advanced">Advanced</option>
-                        </select>
+                        <Input placeholder="Course title" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="difficulty"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center justify-between">
+                          <span>Difficulty</span>
+                          {renderConfidenceBadge('difficulty')}
+                        </FormLabel>
+                        <FormControl>
+                          <select className="border rounded-md h-9 px-3" {...field}>
+                            <option value="Beginner">Beginner</option>
+                            <option value="Intermediate">Intermediate</option>
+                            <option value="Advanced">Advanced</option>
+                          </select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="duration"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center justify-between">
+                          <span>Total Duration (minutes)</span>
+                          {renderConfidenceBadge('duration')}
+                        </FormLabel>
+                        <FormControl>
+                          <Input type="number" min={0} {...field} onChange={(e) => field.onChange(Number(e.target.value))} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center justify-between">
+                        <span>Description</span>
+                        {renderConfidenceBadge('description')}
+                      </FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="Course description" rows={5} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -350,208 +400,173 @@ export default function NewCoursePage() {
 
                 <FormField
                   control={form.control}
-                  name="duration"
+                  name="studentProfile"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="flex items-center justify-between">
-                        <span>Total Duration (minutes)</span>
-                        {renderConfidenceBadge('duration')}
+                        <span>Student Profile</span>
+                        {renderConfidenceBadge('studentProfile')}
                       </FormLabel>
                       <FormControl>
-                        <Input type="number" min={0} {...field} onChange={(e) => field.onChange(Number(e.target.value))} />
+                        <Textarea placeholder="Who is this course for?" rows={3} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-              </div>
 
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center justify-between">
-                      <span>Description</span>
-                      {renderConfidenceBadge('description')}
-                    </FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Course description" rows={5} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="studentProfile"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center justify-between">
-                      <span>Student Profile</span>
-                      {renderConfidenceBadge('studentProfile')}
-                    </FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Who is this course for?" rows={3} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormItem>
-                <FormLabel className="flex items-center justify-between">
-                  <span>Learning Goals</span>
-                  {renderConfidenceBadge('learningGoals')}
-                </FormLabel>
-                <div className="space-y-2">
-                  {form.watch('learningGoals').map((goal, i) => (
-                    <div key={i} className="flex gap-2">
-                      <Input
-                        value={goal}
-                        onChange={(e) => {
-                          const next = [...form.getValues('learningGoals')];
-                          next[i] = e.target.value;
-                          form.setValue('learningGoals', next, { shouldValidate: true });
-                        }}
-                        placeholder={`Goal ${i + 1}`}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          const next = form.getValues('learningGoals').filter((_, idx) => idx !== i);
-                          form.setValue('learningGoals', next.length ? next : ['']);
-                        }}
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  ))}
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => form.setValue('learningGoals', [...form.getValues('learningGoals'), ''])}
-                  >
-                    Add Goal
-                  </Button>
-                </div>
-              </FormItem>
-
-              <FormItem>
-                <FormLabel className="flex items-center justify-between">
-                  <span>Instructors</span>
-                  {renderConfidenceBadge('instructors')}
-                </FormLabel>
-                <div className="space-y-3">
-                  {instructorsArray.fields.map((f, i) => (
-                    <div key={f.id} className="grid grid-cols-1 md:grid-cols-2 gap-2 items-end">
-                      <Input
-                        placeholder="Name"
-                        value={form.watch(`instructors.${i}.name`)}
-                        onChange={(e) => form.setValue(`instructors.${i}.name`, e.target.value)}
-                      />
-                      <div className="flex gap-2">
+                <FormItem>
+                  <FormLabel className="flex items-center justify-between">
+                    <span>Learning Goals</span>
+                    {renderConfidenceBadge('learningGoals')}
+                  </FormLabel>
+                  <div className="space-y-2">
+                    {form.watch('learningGoals').map((goal, i) => (
+                      <div key={i} className="flex gap-2">
                         <Input
-                          placeholder="Title"
-                          value={form.watch(`instructors.${i}.title`)}
-                          onChange={(e) => form.setValue(`instructors.${i}.title`, e.target.value)}
+                          value={goal}
+                          onChange={(e) => {
+                            const next = [...form.getValues('learningGoals')];
+                            next[i] = e.target.value;
+                            form.setValue('learningGoals', next, { shouldValidate: true });
+                          }}
+                          placeholder={`Goal ${i + 1}`}
                         />
-                        <Button type="button" variant="outline" onClick={() => instructorsArray.remove(i)}>Remove</Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            const next = form.getValues('learningGoals').filter((_, idx) => idx !== i);
+                            form.setValue('learningGoals', next.length ? next : ['']);
+                          }}
+                        >
+                          Remove
+                        </Button>
                       </div>
-                    </div>
-                  ))}
-                  <Button type="button" variant="secondary" onClick={() => instructorsArray.append({ name: '', title: '' })}>Add Instructor</Button>
-                </div>
-              </FormItem>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => form.setValue('learningGoals', [...form.getValues('learningGoals'), ''])}
+                    >
+                      Add Goal
+                    </Button>
+                  </div>
+                </FormItem>
 
-              <FormItem>
-                <FormLabel className="flex items-center justify-between">
-                  <span>Course Items</span>
-                  {renderConfidenceBadge('courseItems')}
-                </FormLabel>
-                <div className="space-y-3">
-                  {courseItemsArray.fields.map((f, i) => (
-                    <div key={f.id} className="grid grid-cols-1 md:grid-cols-6 gap-2 items-center">
-                      <div className="md:col-span-3">
+                <FormItem>
+                  <FormLabel className="flex items-center justify-between">
+                    <span>Instructors</span>
+                    {renderConfidenceBadge('instructors')}
+                  </FormLabel>
+                  <div className="space-y-3">
+                    {instructorsArray.fields.map((f, i) => (
+                      <div key={f.id} className="grid grid-cols-1 md:grid-cols-2 gap-2 items-end">
                         <Input
-                          placeholder="Item title"
-                          value={form.watch(`courseItems.${i}.title`)}
-                          onChange={(e) => form.setValue(`courseItems.${i}.title`, e.target.value)}
+                          placeholder="Name"
+                          value={form.watch(`instructors.${i}.name`)}
+                          onChange={(e) => form.setValue(`instructors.${i}.name`, e.target.value)}
                         />
-                      </div>
-                      <div className="md:col-span-2">
-                        <Input
-                          type="number"
-                          min={0}
-                          placeholder="Duration (min)"
-                          value={form.watch(`courseItems.${i}.duration`) ?? 0}
-                          onChange={(e) => form.setValue(`courseItems.${i}.duration`, Number(e.target.value))}
-                        />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          id={`item-${i}-code`}
-                          type="checkbox"
-                          checked={form.watch(`courseItems.${i}.usesCodeExample`) || false}
-                          onChange={(e) => form.setValue(`courseItems.${i}.usesCodeExample`, e.target.checked)}
-                        />
-                        <label htmlFor={`item-${i}-code`}>Code examples?</label>
-                      </div>
-                      <div className="md:col-span-6">
-                        <Button type="button" variant="outline" onClick={() => courseItemsArray.remove(i)}>Remove</Button>
-                      </div>
-                    </div>
-                  ))}
-                  <Button type="button" variant="secondary" onClick={() => courseItemsArray.append({ title: '', duration: 0, usesCodeExample: false })}>Add Item</Button>
-                </div>
-              </FormItem>
-
-              <div className="grid grid-cols-1 gap-4">
-                <FormField
-                  control={form.control}
-                  name="usesCodeExamples"
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input id="usesCodeExamples" type="checkbox" checked={field.value} onChange={(e) => field.onChange(e.target.checked)} />
-                        <div className="flex items-center gap-2">
-                          <FormLabel htmlFor="usesCodeExamples">Course uses code examples?</FormLabel>
-                          {renderConfidenceBadge('usesCodeExamples')}
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Title"
+                            value={form.watch(`instructors.${i}.title`)}
+                            onChange={(e) => form.setValue(`instructors.${i}.title`, e.target.value)}
+                          />
+                          <Button type="button" variant="outline" onClick={() => instructorsArray.remove(i)}>Remove</Button>
                         </div>
                       </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                    ))}
+                    <Button type="button" variant="secondary" onClick={() => instructorsArray.append({ name: '', title: '' })}>Add Instructor</Button>
+                  </div>
+                </FormItem>
 
-                <FormField
-                  control={form.control}
-                  name="url"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center justify-between">
-                        <span>Course URL</span>
-                        {renderConfidenceBadge('url')}
-                      </FormLabel>
-                      <FormControl>
-                        <Input placeholder="https://example.com/course" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                <FormItem>
+                  <FormLabel className="flex items-center justify-between">
+                    <span>Course Items</span>
+                    {renderConfidenceBadge('courseItems')}
+                  </FormLabel>
+                  <div className="space-y-3">
+                    {courseItemsArray.fields.map((f, i) => (
+                      <div key={f.id} className="grid grid-cols-1 md:grid-cols-6 gap-2 items-center">
+                        <div className="md:col-span-3">
+                          <Input
+                            placeholder="Item title"
+                            value={form.watch(`courseItems.${i}.title`)}
+                            onChange={(e) => form.setValue(`courseItems.${i}.title`, e.target.value)}
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <Input
+                            type="number"
+                            min={0}
+                            placeholder="Duration (min)"
+                            value={form.watch(`courseItems.${i}.duration`) ?? 0}
+                            onChange={(e) => form.setValue(`courseItems.${i}.duration`, Number(e.target.value))}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            id={`item-${i}-code`}
+                            type="checkbox"
+                            checked={form.watch(`courseItems.${i}.usesCodeExample`) || false}
+                            onChange={(e) => form.setValue(`courseItems.${i}.usesCodeExample`, e.target.checked)}
+                          />
+                          <label htmlFor={`item-${i}-code`}>Code examples?</label>
+                        </div>
+                        <div className="md:col-span-6">
+                          <Button type="button" variant="outline" onClick={() => courseItemsArray.remove(i)}>Remove</Button>
+                        </div>
+                      </div>
+                    ))}
+                    <Button type="button" variant="secondary" onClick={() => courseItemsArray.append({ title: '', duration: 0, usesCodeExample: false })}>Add Item</Button>
+                  </div>
+                </FormItem>
 
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => form.reset()}>Reset</Button>
-                <Button type="submit" disabled={!form.formState.isValid || form.formState.isSubmitting} aria-busy={form.formState.isSubmitting}>
-                  {form.formState.isSubmitting ? 'Creating…' : 'Create Course'}
-                </Button>
-              </div>
-            </form>
-          </Form>
+                <div className="grid grid-cols-1 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="usesCodeExamples"
+                    render={({ field }) => (
+                      <FormItem>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input id="usesCodeExamples" type="checkbox" checked={field.value} onChange={(e) => field.onChange(e.target.checked)} />
+                          <div className="flex items-center gap-2">
+                            <FormLabel htmlFor="usesCodeExamples">Course uses code examples?</FormLabel>
+                            {renderConfidenceBadge('usesCodeExamples')}
+                          </div>
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="url"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center justify-between">
+                          <span>Course URL</span>
+                          {renderConfidenceBadge('url')}
+                        </FormLabel>
+                        <FormControl>
+                          <Input placeholder="https://example.com/course" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={resetForm}>Reset</Button>
+                  <Button type="submit" disabled={!form.formState.isValid || form.formState.isSubmitting} aria-busy={form.formState.isSubmitting}>
+                    {form.formState.isSubmitting ? 'Creating…' : 'Create Course'}
+                  </Button>
+                </div>
+              </form>
+            </Form>
           </div>
           {/* Toast */}
           {toast && (
