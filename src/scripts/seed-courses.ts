@@ -10,6 +10,7 @@ import {
     createCourseEmbeddings,
 } from '../lib/utils/embeddings';
 import mongoose from 'mongoose';
+import { assertSafeToWipe } from '../lib/utils/local-guard';
 import { disconnectFromDatabase } from '../lib/db/connection';
 import fs from 'fs';
 import path from 'path';
@@ -32,6 +33,9 @@ async function seedCourses() {
         }
 
         // Connect to MongoDB
+        // Seeding wipes collections: refuse to run against a non-local database
+        assertSafeToWipe(mongodbUri, 'seed-courses');
+
         await connectToDatabase(mongodbUri);
         console.log('Connected to MongoDB Atlas');
 

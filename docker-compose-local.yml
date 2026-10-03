@@ -1,0 +1,26 @@
+# Local MongoDB (with Atlas Vector Search) for development and testing.
+# Keeps local work fully separate from the deployed environment.
+#
+# Usage:
+#   npm run db:up      # start the database
+#   npm run db:init    # create the vector search indexes (first time only)
+#   npm run db:down    # stop it (data is kept in the volumes)
+#   npm run db:reset   # stop it AND delete all local data
+name: event-matcher-local
+
+services:
+  mongodb:
+    # Regular `mongo` images do not support $vectorSearch; this one does.
+    image: mongodb/mongodb-atlas-local:latest
+    ports:
+      # Offset from the default 27017 to avoid conflicts; change MONGODB_LOCAL_PORT if needed
+      - "${MONGODB_LOCAL_PORT:-27018}:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+      - mongot_data:/data/mongot
+
+volumes:
+  mongodb_data:
+  mongodb_config:
+  mongot_data:

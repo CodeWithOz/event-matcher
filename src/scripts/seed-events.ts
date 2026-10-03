@@ -12,6 +12,7 @@ import {
     createEventEmbeddings,
 } from '../lib/utils/embeddings';
 import mongoose from 'mongoose';
+import { assertSafeToWipe } from '../lib/utils/local-guard';
 import { disconnectFromDatabase } from '../lib/db/connection';
 
 // Sample events data
@@ -86,6 +87,9 @@ async function seedEvents() {
         }
 
         // Connect to MongoDB
+        // Seeding wipes collections: refuse to run against a non-local database
+        assertSafeToWipe(mongodbUri, 'seed-events');
+
         await connectToDatabase(mongodbUri);
         console.log('Connected to MongoDB Atlas');
 

@@ -11,7 +11,11 @@
     "seed:courses": "ts-node -P tsconfig.scripts.json src/scripts/seed-courses.ts",
     "seed": "npm run seed:events && npm run seed:courses",
     "test-connection": "ts-node -P tsconfig.scripts.json src/scripts/test-connection.ts",
-    "check-env": "ts-node -P tsconfig.scripts.json src/scripts/check-env.ts"
+    "check-env": "ts-node -P tsconfig.scripts.json src/scripts/check-env.ts",
+    "db:up": "docker compose -f docker-compose-local.yml up -d --wait",
+    "db:down": "docker compose -f docker-compose-local.yml down",
+    "db:reset": "docker compose -f docker-compose-local.yml down -v",
+    "db:init": "ts-node -P tsconfig.scripts.json src/scripts/init-local-db.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.1.1",
