@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { timingSafeEqual } from 'crypto';
 import { connectToDatabase } from '@/lib/db/connection';
 import { Event } from '@/lib/models/Event';
 import {
@@ -10,9 +11,16 @@ import {
     getMongoDBConnectionString,
     getOpenAIApiKey,
     getVectorSearchIndexName,
+    getWebhookSecret,
 } from '@/lib/utils/env';
 import mongoose from 'mongoose';
 import { disconnectFromDatabase } from '@/lib/db/connection';
+
+// Limits that bound the cost of a single call (each event triggers an embedding request)
+const MAX_BODY_BYTES = 256 * 1024;
+const MAX_EVENTS_PER_REQUEST = 50;
+const MAX_TITLE_LENGTH = 200;
+const MAX_DESCRIPTION_LENGTH = 5000;
 
 // Define the expected event structure
 interface EventInput {
@@ -32,7 +40,25 @@ function isValidEvent(event: unknown): event is EventInput {
         typeof (event as EventInput).title === 'string' &&
         (event as EventInput).title.trim() !== '' &&
         typeof (event as EventInput).description === 'string' &&
-        (event as EventInput).description.trim() !== ''
+        (event as EventInput).description.trim() !== '' &&
+        (event as EventInput).title.length <= MAX_TITLE_LENGTH &&
+        (event as EventInput).description.length <= MAX_DESCRIPTION_LENGTH
+    );
+}
+
+/**
+ * Check the "Authorization: Bearer <secret>" header against WEBHOOK_SECRET.
+ * Uses a constant-time comparison to avoid leaking the secret through timing.
+ */
+function isAuthorized(request: NextRequest, secret: string): boolean {
+    const header = request.headers.get('authorization') ?? '';
+    const match = header.match(/^Bearer (.+)$/);
+    if (!match) return false;
+
+    const provided = Buffer.from(match[1]);
+    const expected = Buffer.from(secret);
+    return (
+        provided.length === expected.length && timingSafeEqual(provided, expected)
     );
 }
 
@@ -42,22 +68,67 @@ function isValidEvent(event: unknown): event is EventInput {
  */
 export async function POST(request: NextRequest) {
     try {
+        // Authenticate before doing any work (no DB or OpenAI calls for unauthorized callers).
+        // If the secret is not configured, fail closed rather than accept anonymous calls.
+        let webhookSecret: string;
+        try {
+            webhookSecret = getWebhookSecret();
+        } catch {
+            console.error('Webhook rejected: WEBHOOK_SECRET is not configured');
+            return NextResponse.json(
+                { error: 'Webhook is not configured' },
+                { status: 500 }
+            );
+        }
+        if (!isAuthorized(request, webhookSecret)) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        // Reject oversized payloads before parsing them
+        const contentLength = Number(request.headers.get('content-length') ?? 0);
+        if (contentLength > MAX_BODY_BYTES) {
+            return NextResponse.json(
+                { error: `Request body must not exceed ${MAX_BODY_BYTES} bytes` },
+                { status: 413 }
+            );
+        }
+
         // Get environment variables
         const mongodbUri = getMongoDBConnectionString();
         const openaiApiKey = getOpenAIApiKey();
         const vectorSearchIndexName = getVectorSearchIndexName();
 
-        // Connect to MongoDB
-        await connectToDatabase(mongodbUri);
+        // Parse request body (re-check size, since content-length can be absent)
+        const rawBody = await request.text();
+        if (Buffer.byteLength(rawBody) > MAX_BODY_BYTES) {
+            return NextResponse.json(
+                { error: `Request body must not exceed ${MAX_BODY_BYTES} bytes` },
+                { status: 413 }
+            );
+        }
 
-        // Parse request body
-        const body = await request.json();
+        let body: unknown;
+        try {
+            body = JSON.parse(rawBody);
+        } catch {
+            return NextResponse.json(
+                { error: 'Request body must be valid JSON' },
+                { status: 400 }
+            );
+        }
 
         // Validate that body is an array
         if (!Array.isArray(body)) {
             return NextResponse.json(
                 { error: 'Request body must be an array of events' },
                 { status: 400 }
+            );
+        }
+
+        if (body.length > MAX_EVENTS_PER_REQUEST) {
+            return NextResponse.json(
+                { error: `A request may contain at most ${MAX_EVENTS_PER_REQUEST} events` },
+                { status: 413 }
             );
         }
 
@@ -80,7 +151,7 @@ export async function POST(request: NextRequest) {
                     error: 'Some events are invalid',
                     invalidEvents,
                     message:
-                        'Each event must have a non-empty title and description',
+                        `Each event must have a non-empty title (max ${MAX_TITLE_LENGTH} chars) and description (max ${MAX_DESCRIPTION_LENGTH} chars)`,
                 },
                 { status: 400 }
             );
@@ -93,6 +164,9 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             );
         }
+
+        // Connect to MongoDB only once the payload is known to be valid
+        await connectToDatabase(mongodbUri);
 
         // Save valid events to database
         const createdEvents = await Event.insertMany(validEvents);
