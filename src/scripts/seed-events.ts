@@ -125,10 +125,11 @@ async function seedEvents() {
         console.log('Database seeding completed successfully');
     } catch (error) {
         console.error('Error seeding database:', error);
+        process.exitCode = 1;
     } finally {
         // Disconnect from MongoDB
         await disconnectFromDatabase();
-        process.exit(0);
+        process.exit();
     }
 }
 

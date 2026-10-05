@@ -47,6 +47,36 @@ function isValidEvent(event: unknown): event is EventInput {
 }
 
 /**
+ * Read the request body while counting bytes, stopping as soon as the limit is
+ * exceeded (Content-Length may be absent or wrong, e.g. chunked transfers).
+ * @returns the body text, or null if it exceeds the limit
+ */
+async function readBodyWithLimit(
+    request: NextRequest,
+    maxBytes: number
+): Promise<string | null> {
+    if (!request.body) return '';
+
+    const reader = request.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        received += value.byteLength;
+        if (received > maxBytes) {
+            await reader.cancel();
+            return null;
+        }
+        chunks.push(value);
+    }
+
+    return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
  * Check the "Authorization: Bearer <secret>" header against WEBHOOK_SECRET.
  * Uses a constant-time comparison to avoid leaking the secret through timing.
  */
@@ -98,9 +128,9 @@ export async function POST(request: NextRequest) {
         const openaiApiKey = getOpenAIApiKey();
         const vectorSearchIndexName = getVectorSearchIndexName();
 
-        // Parse request body (re-check size, since content-length can be absent)
-        const rawBody = await request.text();
-        if (Buffer.byteLength(rawBody) > MAX_BODY_BYTES) {
+        // Parse request body (bounded read, since content-length can be absent or wrong)
+        const rawBody = await readBodyWithLimit(request, MAX_BODY_BYTES);
+        if (rawBody === null) {
             return NextResponse.json(
                 { error: `Request body must not exceed ${MAX_BODY_BYTES} bytes` },
                 { status: 413 }

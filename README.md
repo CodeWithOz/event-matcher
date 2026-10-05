@@ -77,19 +77,21 @@ npx ts-node src/scripts/seed-courses.ts
 
 ### Local Database (recommended for testing)
 
-To test without touching production, run a local MongoDB with Atlas Vector Search in Docker (`docker-compose-local.yml`, uses the `mongodb/mongodb-atlas-local` image):
+To test without touching production, run a local MongoDB with Atlas Vector Search in Docker (`docker-compose-local.yml`, uses the `mongodb/mongodb-atlas-local` image).
+
+First, point `.env.local` at the local database (not your Atlas/production URI):
+
+```
+MONGODB_URI=mongodb://localhost:27018/event-matcher?directConnection=true
+```
+
+Then:
 
 ```bash
 npm run db:up      # start the local database (host port 27018, override with MONGODB_LOCAL_PORT)
 npm run db:init    # create collections and vector search indexes (first time only)
 npm run seed       # seed local data
 npm run db:down    # stop (data persists); `npm run db:reset` also deletes the data
-```
-
-Point `.env.local` at it:
-
-```
-MONGODB_URI=mongodb://localhost:27018/event-matcher?directConnection=true
 ```
 
 The seed scripts delete existing data, so they refuse to run unless `MONGODB_URI` points to a local host. Set `ALLOW_REMOTE_DB=true` to override this deliberately.
