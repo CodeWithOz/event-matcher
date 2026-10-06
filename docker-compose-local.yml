@@ -13,8 +13,9 @@ services:
     # Regular `mongo` images do not support $vectorSearch; this one does.
     image: mongodb/mongodb-atlas-local:latest
     ports:
-      # Offset from the default 27017 to avoid conflicts; change MONGODB_LOCAL_PORT if needed
-      - "${MONGODB_LOCAL_PORT:-27018}:27017"
+      # Offset from the default 27017 to avoid conflicts; change MONGODB_LOCAL_PORT if needed.
+      # Bound to loopback only: the database has no credentials, so it must not be reachable from the network.
+      - "127.0.0.1:${MONGODB_LOCAL_PORT:-27018}:27017"
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb

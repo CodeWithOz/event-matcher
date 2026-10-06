@@ -14,7 +14,6 @@ import {
     getWebhookSecret,
 } from '@/lib/utils/env';
 import mongoose from 'mongoose';
-import { disconnectFromDatabase } from '@/lib/db/connection';
 
 // Limits that bound the cost of a single call (each event triggers an embedding request)
 const MAX_BODY_BYTES = 256 * 1024;
@@ -236,8 +235,8 @@ export async function POST(request: NextRequest) {
             },
             { status: 500 }
         );
-    } finally {
-        // Disconnect from MongoDB
-        await disconnectFromDatabase();
     }
+    // The Mongoose connection is shared (connectToDatabase reuses it), so it is
+    // intentionally not closed here: disconnecting after every request, including
+    // rejected unauthenticated ones, would cut the connection of requests in flight.
 }
