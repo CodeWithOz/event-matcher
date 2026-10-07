@@ -33,3 +33,16 @@ export const getOpenAIApiKey = (): string => {
 export const getVectorSearchIndexName = (): string => {
   return process.env.EVENT_VECTOR_SEARCH_INDEX_NAME || 'event_vector_index';
 };
+
+/**
+ * Get the shared secret expected from callers of the events webhook
+ */
+export const getWebhookSecret = (): string => {
+  const secret = process.env.WEBHOOK_SECRET;
+
+  if (!secret) {
+    throw new Error('WEBHOOK_SECRET environment variable is not set');
+  }
+
+  return secret;
+};

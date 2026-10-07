@@ -66,6 +66,17 @@ function checkEnvVariables() {
     }
   }
   
+  // Check Webhook Secret
+  const webhookSecret = process.env.WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error('❌ WEBHOOK_SECRET is not set (the events webhook will reject every request)');
+    console.log('  Generate one with: openssl rand -hex 32');
+  } else if (webhookSecret.length < 32) {
+    console.error('❌ WEBHOOK_SECRET is too short. Use at least 32 characters (openssl rand -hex 32)');
+  } else {
+    console.log('✅ WEBHOOK_SECRET is set correctly');
+  }
+
   console.log('\nEnvironment variables check completed.');
   console.log('\nMake sure your .env.local file has the following format:');
   console.log('MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/<database>');
