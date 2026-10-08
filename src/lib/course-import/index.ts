@@ -786,10 +786,16 @@ function extractInstructorsFromRoot(
         return;
       }
       const title =
-        sanitizeText(cardEl.find("#instructor-title").first().text()) ||
+        sanitizeText(cardEl.find("h3").first().next("article").text()) ||
         "Instructor";
       instructors.push({ name, title });
     });
+
+  // Only the placeholder title means the card layout was not recognised;
+  // return nothing so the LLM fallback can fill the field instead.
+  if (instructors.every((instructor) => instructor.title === "Instructor")) {
+    return [];
+  }
 
   return instructors;
 }
