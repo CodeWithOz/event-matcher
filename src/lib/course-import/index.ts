@@ -614,7 +614,7 @@ function extractHtmlBodyDraft(html: string): {
     draft.studentProfile = studentProfile;
   }
 
-  const learningGoals = extractSectionListItems($, "#features-grid");
+  const learningGoals = extractLearningGoalsFromRoot($);
   if (learningGoals.length > 0) {
     draft.learningGoals = learningGoals;
   }
@@ -723,6 +723,31 @@ function extractCourseOutlineFromRoot($: CheerioAPI): {
   return { items, codeExampleCount, totalDuration };
 }
 
+function extractLearningGoalsFromRoot($: CheerioAPI): string[] {
+  // "#features-grid" is an empty anchor; the goals are the <li> of the <ul>
+  // that directly follows the "What you'll learn" heading.
+  const heading = $("#features-grid")
+    .nextAll("h2")
+    .filter((_, el) => /what you.ll learn/i.test($(el).text()))
+    .first();
+  if (!heading.length) {
+    return [];
+  }
+
+  const items: string[] = [];
+  heading
+    .nextAll("ul")
+    .first()
+    .children("li")
+    .each((_, li) => {
+      const text = sanitizeText($(li).text());
+      if (text) {
+        items.push(text);
+      }
+    });
+  return items;
+}
+
 function extractInstructorsFromRoot(
   $: CheerioAPI
 ): Array<{ name: string; title: string }> {
@@ -757,7 +782,7 @@ function extractInstructorsFromRoot(
     .each((_, card) => {
       const cardEl = $(card);
       const name = sanitizeText(cardEl.find("h3").first().text());
-      if (!name) {
+      if (!name || instructors.some((instructor) => instructor.name === name)) {
         return;
       }
       const title =
