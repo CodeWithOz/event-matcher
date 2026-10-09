@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
-import { connectToDatabase, disconnectFromDatabase } from '@/lib/db/connection';
+import { connectToDatabase } from '@/lib/db/connection';
 import { getMongoDBConnectionString } from '@/lib/utils/env';
 
 // DELETE /api/admin/courses/[id] - Delete a course by ID
@@ -25,7 +25,5 @@ export async function DELETE(
   } catch (error: unknown) {
     console.error('Error deleting course:', error);
     return NextResponse.json({ error: 'Failed to delete course' }, { status: 500 });
-  } finally {
-    await disconnectFromDatabase();
   }
 }
