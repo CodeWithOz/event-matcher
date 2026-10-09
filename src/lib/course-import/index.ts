@@ -951,32 +951,6 @@ function extractSectionText($: CheerioAPI, matcher: RegExp): string | null {
   return collectTextFromContainer($, container);
 }
 
-function extractSectionListItems(
-  $: CheerioAPI,
-  matcher: RegExp | string
-): string[] {
-  let container: CheerioSelection | null;
-  if (typeof matcher === "string") {
-    const selection = $(matcher);
-    container = selection.length ? (selection as CheerioSelection) : null;
-  } else {
-    container = findSectionContainer($, matcher);
-  }
-  if (!container || !container.length) {
-    return [];
-  }
-
-  const items: string[] = [];
-  container.find("li").each((_, li) => {
-    const text = sanitizeText($(li).text());
-    if (text) {
-      items.push(text);
-    }
-  });
-
-  return items;
-}
-
 function findSectionContainer(
   $: CheerioAPI,
   matcher: RegExp | string
