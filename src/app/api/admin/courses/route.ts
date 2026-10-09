@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
-import { connectToDatabase, disconnectFromDatabase } from '@/lib/db/connection';
+import { connectToDatabase } from '@/lib/db/connection';
 import { getMongoDBConnectionString, getOpenAIApiKey } from '@/lib/utils/env';
 import { initializeEmbeddings, initializeVectorStore, createCourseEmbeddings } from '@/lib/utils/embeddings';
 import { CourseInputSchema } from '@/lib/validation/course';
@@ -43,8 +43,6 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Error creating course:', error);
     return NextResponse.json({ error: 'Failed to create course' }, { status: 500 });
-  } finally {
-    await disconnectFromDatabase();
   }
 }
 
@@ -78,7 +76,5 @@ export async function GET(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Error listing courses:', error);
     return NextResponse.json({ error: 'Failed to list courses' }, { status: 500 });
-  } finally {
-    await disconnectFromDatabase();
   }
 }
