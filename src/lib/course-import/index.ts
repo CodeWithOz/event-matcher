@@ -725,7 +725,7 @@ function extractCourseOutlineFromRoot($: CheerioAPI): {
 
 function extractLearningGoalsFromRoot($: CheerioAPI): string[] {
   // "#features-grid" is an empty anchor; the goals are the <li> of the <ul>
-  // that directly follows the "What you'll learn" heading.
+  // in that heading's section (stopping at the next <h2>).
   const heading = $("#features-grid")
     .nextAll("h2")
     .filter((_, el) => /what you.ll learn/i.test($(el).text()))
@@ -736,7 +736,7 @@ function extractLearningGoalsFromRoot($: CheerioAPI): string[] {
 
   const items: string[] = [];
   heading
-    .nextAll("ul")
+    .nextUntil("h2", "ul")
     .first()
     .children("li")
     .each((_, li) => {
@@ -791,9 +791,9 @@ function extractInstructorsFromRoot(
       instructors.push({ name, title });
     });
 
-  // Only the placeholder title means the card layout was not recognised;
-  // return nothing so the LLM fallback can fill the field instead.
-  if (instructors.every((instructor) => instructor.title === "Instructor")) {
+  // A placeholder title means the card layout was not (fully) recognised;
+  // return nothing so the LLM fallback can fill the whole field instead.
+  if (instructors.some((instructor) => instructor.title === "Instructor")) {
     return [];
   }
 
