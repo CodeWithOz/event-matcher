@@ -1,4 +1,7 @@
+"use client";
+
 import AdminHeader from "@/components/admin/AdminHeader";
+import { useState, useEffect } from "react";
 
 interface EventItem {
   _id: string;
@@ -7,33 +10,61 @@ interface EventItem {
   createdAt?: string;
 }
 
-async function getEvents(): Promise<EventItem[]> {
-  try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/events`, { cache: "no-store" });
-    if (!res.ok) throw new Error("Failed");
-    const data = (await res.json()) as { events: EventItem[] };
-    return data.events || [];
-  } catch {
-    try {
-      const res = await fetch("/api/events", { cache: "no-store" });
-      if (!res.ok) return [];
-      const data = (await res.json()) as { events: EventItem[] };
-      return data.events || [];
-    } catch {
-      return [];
-    }
-  }
-}
+export default function AdminEventsPage() {
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-export default async function AdminEventsPage() {
-  const events = await getEvents();
+  const loadEvents = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch("/api/events", { cache: "no-store" });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to load events");
+      }
+
+      setEvents(data.events || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load events");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadEvents();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <AdminHeader />
+        <main className="mx-auto max-w-5xl px-4 py-8">
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <AdminHeader />
       <main className="mx-auto max-w-5xl px-4 py-8">
         <h1 className="text-2xl font-semibold mb-6">Events</h1>
-        {events.length === 0 ? (
+
+        {error && (
+          <div className="mb-6 p-4 border border-red-200 rounded-md bg-red-50 text-red-700">
+            {error}
+          </div>
+        )}
+
+        {events.length === 0 && !error ? (
           <p className="text-gray-600">No events found.</p>
         ) : (
           <ul className="space-y-3">

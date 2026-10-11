@@ -10,7 +10,6 @@ import {
     searchSimilarCourses,
 } from '@/lib/utils/embeddings';
 import mongoose from 'mongoose';
-import { disconnectFromDatabase } from '@/lib/db/connection';
 
 // POST /api/search/courses - Search for courses based on query
 export async function POST(request: NextRequest) {
@@ -51,8 +50,5 @@ export async function POST(request: NextRequest) {
             { error: 'Failed to search courses' },
             { status: 500 }
         );
-    } finally {
-        // Disconnect from MongoDB
-        await disconnectFromDatabase();
     }
 }
