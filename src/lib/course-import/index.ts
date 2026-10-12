@@ -248,6 +248,7 @@ async function extractCourseSuggestions(
     "instructors",
     "duration",
     "usesCodeExamples",
+    "difficulty",
     "url",
   ] as const;
   if (hasMissingSuggestions(suggestions, requiredAfterNext)) {
@@ -619,6 +620,23 @@ function extractHtmlBodyDraft(html: string): {
     draft.learningGoals = learningGoals;
   }
 
+  // The summary card lists level and total duration as bare list entries,
+  // e.g. "Intermediate", "3h11m".
+  $("#summary-card li").each((_, li) => {
+    const text = sanitizeText($(li).text());
+    if (!draft.difficulty && /^(beginner|intermediate|advanced)$/i.test(text)) {
+      draft.difficulty = normalizeDifficulty(text) ?? undefined;
+    } else if (
+      !draft.duration &&
+      /^(\d+\s*h(\s*\d+\s*m)?|\d+\s*m)$/i.test(text)
+    ) {
+      const minutes = parseDurationFromDisplay(text);
+      if (minutes && minutes > 0) {
+        draft.duration = minutes;
+      }
+    }
+  });
+
   const outlineExtraction = extractCourseOutlineFromRoot($);
   if (outlineExtraction.items.length > 0) {
     draft.courseItems = outlineExtraction.items;
@@ -686,7 +704,31 @@ function extractCourseOutlineFromRoot($: CheerioAPI): {
     .first();
 
   if (!lessonsContainer.length) {
-    return { items, codeExampleCount, totalDuration: 0 };
+    // Current markup (Next.js App Router): the lessons list is a sibling of the
+    // outline header and each lesson is a link to learn.deeplearning.ai.
+    anchor
+      .parent()
+      .find('li:has(a[href*="/lesson/"])')
+      .each((_, li) => {
+        const link = $(li).find('a[href*="/lesson/"]').first();
+        const title = sanitizeText(link.find("div.body2").first().text());
+        if (!title) {
+          return;
+        }
+
+        // Detail line looks like "Video with Code Example・13m"
+        const detailText = sanitizeText(link.find("div.label1").first().text());
+        const duration = parseDurationFromDisplay(detailText);
+
+        items.push({
+          title,
+          duration: duration && duration > 0 ? duration : 0,
+          usesCodeExample: /code|notebook|script|demo/i.test(detailText),
+        });
+      });
+
+    const totalDuration = items.reduce((acc, item) => acc + item.duration, 0);
+    return { items, codeExampleCount, totalDuration };
   }
 
   const lessonsList = lessonsContainer
@@ -1150,12 +1192,16 @@ function parseDurationFromDisplay(value: string): number | null {
   const normalized = value.toLowerCase();
   let totalMinutes = 0;
 
-  const hourMatch = normalized.match(/(\d+(?:[\.,]\d+)?)\s*(hours?|hrs?)/);
+  const hourMatch = normalized.match(
+    /(\d+(?:[\.,]\d+)?)\s*(?:hours?|hrs?|h)(?![a-z])/
+  );
   if (hourMatch) {
     totalMinutes += parseFloat(hourMatch[1].replace(",", ".")) * 60;
   }
 
-  const minuteMatch = normalized.match(/(\d+(?:[\.,]\d+)?)\s*(minutes?|mins?)/);
+  const minuteMatch = normalized.match(
+    /(\d+(?:[\.,]\d+)?)\s*(?:minutes?|mins?|m)(?![a-z])/
+  );
   if (minuteMatch) {
     totalMinutes += parseFloat(minuteMatch[1].replace(",", "."));
   }
