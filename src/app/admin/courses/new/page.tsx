@@ -322,6 +322,8 @@ export default function NewCoursePage() {
               )}
             </section>
 
+            <hr className="border-gray-200" />
+
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 <FormField
@@ -381,6 +383,8 @@ export default function NewCoursePage() {
                   />
                 </div>
 
+                <hr className="border-gray-200" />
+
                 <FormField
                   control={form.control}
                   name="description"
@@ -414,6 +418,8 @@ export default function NewCoursePage() {
                     </FormItem>
                   )}
                 />
+
+                <hr className="border-gray-200" />
 
                 <FormItem>
                   <FormLabel className="flex items-center justify-between">
@@ -454,6 +460,8 @@ export default function NewCoursePage() {
                   </div>
                 </FormItem>
 
+                <hr className="border-gray-200" />
+
                 <FormItem>
                   <FormLabel className="flex items-center justify-between">
                     <span>Instructors</span>
@@ -480,6 +488,8 @@ export default function NewCoursePage() {
                     <Button type="button" variant="secondary" onClick={() => instructorsArray.append({ name: '', title: '' })}>Add Instructor</Button>
                   </div>
                 </FormItem>
+
+                <hr className="border-gray-200" />
 
                 <FormItem>
                   <FormLabel className="flex items-center justify-between">
@@ -523,6 +533,8 @@ export default function NewCoursePage() {
                   </div>
                 </FormItem>
 
+                <hr className="border-gray-200" />
+
                 <div className="grid grid-cols-1 gap-4">
                   <FormField
                     control={form.control}
@@ -558,6 +570,8 @@ export default function NewCoursePage() {
                     )}
                   />
                 </div>
+
+                <hr className="border-gray-200" />
 
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={resetForm}>Reset</Button>
