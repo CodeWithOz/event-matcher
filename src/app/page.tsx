@@ -263,7 +263,12 @@ export default function Home() {
             {/* Display results based on active tab */}
             {activeTab === 'events' && events.length > 0 && (
                 <div className='space-y-6'>
-                    <h2 className='text-2xl font-semibold'>Matching Events</h2>
+                    <div className='flex items-baseline gap-3'>
+                        <h2 className='text-2xl font-semibold'>Matching Events</h2>
+                        <span className='text-sm text-muted-foreground' data-testid='results-count'>
+                            {events.length} {events.length === 1 ? 'result' : 'results'}
+                        </span>
+                    </div>
 
                     {events.map((event, index) => (
                         <Card
@@ -290,7 +295,12 @@ export default function Home() {
             {/* Display course results */}
             {activeTab === 'courses' && courses.length > 0 && (
                 <div className='space-y-6'>
-                    <h2 className='text-2xl font-semibold'>Matching Courses</h2>
+                    <div className='flex items-baseline gap-3'>
+                        <h2 className='text-2xl font-semibold'>Matching Courses</h2>
+                        <span className='text-sm text-muted-foreground' data-testid='results-count'>
+                            {courses.length} {courses.length === 1 ? 'result' : 'results'}
+                        </span>
+                    </div>
 
                     {courses.map((course, index) => (
                         <CourseCard

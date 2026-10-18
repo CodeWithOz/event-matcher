@@ -12,6 +12,7 @@ export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [total, setTotal] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [nextSkip, setNextSkip] = useState<number | null>(0);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +40,7 @@ export default function AdminCoursesPage() {
         setCourses(data.courses);
       }
 
+      setTotal(data.total ?? null);
       setHasMore(data.hasMore);
       setNextSkip(data.nextSkip);
     } catch (err) {
@@ -74,6 +76,7 @@ export default function AdminCoursesPage() {
 
       // Remove the deleted course from the list
       setCourses((prev) => prev.filter((c) => c.id !== courseId));
+      setTotal((prev) => (prev === null ? null : Math.max(0, prev - 1)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete course");
     } finally {
@@ -103,7 +106,14 @@ export default function AdminCoursesPage() {
       <AdminHeader />
       <main className="mx-auto max-w-5xl px-4 py-8">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-semibold">Courses</h1>
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-2xl font-semibold">Courses</h1>
+            <span className="text-sm text-gray-600" data-testid="results-count">
+              {total !== null && total > courses.length
+                ? `Showing ${courses.length} of ${total} courses`
+                : `${courses.length} ${courses.length === 1 ? "course" : "courses"}`}
+            </span>
+          </div>
           <Link href="/admin/courses/new">
             <Button>Add New Course</Button>
           </Link>
