@@ -37,6 +37,8 @@ export default function Home() {
     const [courses, setCourses] = useState<Course[]>([]);
     // State for loading status
     const [isLoading, setIsLoading] = useState(false);
+    // Tab whose search has been submitted and completed (null until then)
+    const [searchedTab, setSearchedTab] = useState<string | null>(null);
     // State for error message
     const [error, setError] = useState<string | null>(null);
     // State for active tab
@@ -76,6 +78,7 @@ export default function Home() {
         // Reset results
         setEvents([]);
         setCourses([]);
+        setSearchedTab(null);
 
         try {
             // Determine which endpoint to call based on active tab
@@ -101,6 +104,7 @@ export default function Home() {
             } else {
                 setCourses(data.courses || []);
             }
+            setSearchedTab(activeTab);
 
             // Scroll to the first result after a short delay to ensure rendering is complete
             setTimeout(() => {
@@ -319,7 +323,7 @@ export default function Home() {
                 </div>
             )}
 
-            {!isLoading && query && !error && (
+            {!isLoading && searchedTab === activeTab && !error && (
                 <>
                     {activeTab === 'events' && events.length === 0 && (
                         <Alert className='mb-6'>
