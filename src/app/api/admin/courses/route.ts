@@ -65,11 +65,13 @@ export async function GET(request: NextRequest) {
       .limit(limit + 1) // Get one extra to check if there are more
       .toArray()) as unknown as CourseVectorDoc[];
 
+    const total = await collection.countDocuments({});
     const hasMore = docs.length > limit;
     const courses = docs.slice(0, limit).map((d) => ({ id: d._id.toString(), ...d }));
 
     return NextResponse.json({
       courses,
+      total,
       hasMore,
       nextSkip: hasMore ? skip + limit : null
     }, { status: 200 });
