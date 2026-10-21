@@ -58,9 +58,11 @@ export default function AdminEventsPage() {
       <main className="mx-auto max-w-5xl px-4 py-8">
         <div className="flex items-baseline gap-3 mb-6">
           <h1 className="text-2xl font-semibold">Events</h1>
-          <span className="text-sm text-gray-600" data-testid="results-count">
-            {events.length} {events.length === 1 ? "event" : "events"}
-          </span>
+          {!error && (
+            <span className="text-sm text-gray-600" data-testid="results-count">
+              {events.length} {events.length === 1 ? "event" : "events"}
+            </span>
+          )}
         </div>
 
         {error && (
