@@ -47,6 +47,8 @@ export default function Home() {
     const [isAdmin, setIsAdmin] = useState(false);
     // Reference to the first result for scrolling
     const firstResultRef = useRef<HTMLDivElement>(null);
+    // Tracks an in-flight search synchronously (state updates are async)
+    const isSearchingRef = useRef(false);
 
     // Check if user is admin on mount
     useEffect(() => {
@@ -67,11 +69,18 @@ export default function Home() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
+        // The Cmd/Ctrl+Enter shortcut bypasses the disabled submit button, so
+        // guard here to keep overlapping searches from racing on shared state
+        if (isSearchingRef.current) {
+            return;
+        }
+
         if (!query.trim()) {
             setError('Please enter a search query');
             return;
         }
 
+        isSearchingRef.current = true;
         setIsLoading(true);
         setError(null);
         
@@ -124,6 +133,7 @@ export default function Home() {
                     : 'An error occurred while searching';
             setError(errorMessage);
         } finally {
+            isSearchingRef.current = false;
             setIsLoading(false);
         }
     };
