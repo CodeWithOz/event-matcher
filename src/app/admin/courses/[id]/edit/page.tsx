@@ -3,7 +3,7 @@
 import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import AdminHeader from '@/components/admin/AdminHeader';
-import CourseForm, { type FormValues } from '@/components/admin/CourseForm';
+import CourseForm, { DEFAULT_VALUES, type FormValues } from '@/components/admin/CourseForm';
 import { Button } from '@/components/ui/button';
 
 export default function EditCoursePage({ params }: { params: Promise<{ id: string }> }) {
@@ -18,7 +18,17 @@ export default function EditCoursePage({ params }: { params: Promise<{ id: strin
         const res = await fetch(`/api/admin/courses/${id}`);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Failed to load course');
-        if (!cancelled) setCourse(data.course as FormValues);
+        if (!cancelled) {
+          // Stored records may lack fields: fill gaps from the form defaults
+          const c = (data.course ?? {}) as Partial<FormValues>;
+          setCourse({
+            ...DEFAULT_VALUES,
+            ...Object.fromEntries(Object.entries(c).filter(([, v]) => v != null)),
+            learningGoals: c.learningGoals?.length ? c.learningGoals : DEFAULT_VALUES.learningGoals,
+            instructors: c.instructors?.length ? c.instructors : DEFAULT_VALUES.instructors,
+            courseItems: c.courseItems?.length ? c.courseItems : DEFAULT_VALUES.courseItems,
+          } as FormValues);
+        }
       } catch (e: unknown) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load course');
       }

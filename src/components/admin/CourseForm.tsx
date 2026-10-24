@@ -32,7 +32,7 @@ const schema = CourseInputSchema;
 
 export type FormValues = z.infer<typeof schema>;
 
-const DEFAULT_VALUES: FormValues = {
+export const DEFAULT_VALUES: FormValues = {
   title: '',
   description: '',
   duration: 0,
