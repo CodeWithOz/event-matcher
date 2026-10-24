@@ -23,7 +23,11 @@ export default function EditCoursePage({ params }: { params: Promise<{ id: strin
           const c = (data.course ?? {}) as Partial<FormValues>;
           setCourse({
             ...DEFAULT_VALUES,
-            ...Object.fromEntries(Object.entries(c).filter(([, v]) => v != null)),
+            ...Object.fromEntries(
+              Object.keys(DEFAULT_VALUES)
+                .filter((k) => c[k as keyof FormValues] != null)
+                .map((k) => [k, c[k as keyof FormValues]])
+            ),
             learningGoals: c.learningGoals?.length ? c.learningGoals : DEFAULT_VALUES.learningGoals,
             instructors: c.instructors?.length
               ? c.instructors.map((i) => ({ name: i?.name ?? '', title: i?.title ?? '' }))
