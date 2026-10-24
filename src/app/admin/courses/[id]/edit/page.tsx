@@ -25,8 +25,16 @@ export default function EditCoursePage({ params }: { params: Promise<{ id: strin
             ...DEFAULT_VALUES,
             ...Object.fromEntries(Object.entries(c).filter(([, v]) => v != null)),
             learningGoals: c.learningGoals?.length ? c.learningGoals : DEFAULT_VALUES.learningGoals,
-            instructors: c.instructors?.length ? c.instructors : DEFAULT_VALUES.instructors,
-            courseItems: c.courseItems?.length ? c.courseItems : DEFAULT_VALUES.courseItems,
+            instructors: c.instructors?.length
+              ? c.instructors.map((i) => ({ name: i?.name ?? '', title: i?.title ?? '' }))
+              : DEFAULT_VALUES.instructors,
+            courseItems: c.courseItems?.length
+              ? c.courseItems.map((i) => ({
+                  title: i?.title ?? '',
+                  duration: i?.duration ?? 0,
+                  usesCodeExample: i?.usesCodeExample ?? false,
+                }))
+              : DEFAULT_VALUES.courseItems,
           } as FormValues);
         }
       } catch (e: unknown) {
