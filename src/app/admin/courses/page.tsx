@@ -146,7 +146,10 @@ export default function AdminCoursesPage() {
                         : ""}
                     </div>
                   </div>
-                  <div className="flex-shrink-0">
+                  <div className="flex-shrink-0 flex gap-2">
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href={`/admin/courses/${c.id}/edit`}>Edit</Link>
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
