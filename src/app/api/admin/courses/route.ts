@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/db/connection';
-import { getMongoDBConnectionString, getOpenAIApiKey } from '@/lib/utils/env';
-import { initializeEmbeddings, initializeVectorStore, createCourseEmbeddings } from '@/lib/utils/embeddings';
+import { getMongoDBConnectionString } from '@/lib/utils/env';
+import { publishCourse } from '@/lib/courses/publish';
 import { CourseInputSchema } from '@/lib/validation/course';
 import type { IBaseCourse } from '@/lib/models/Course';
 
@@ -20,24 +20,8 @@ export async function POST(request: NextRequest) {
 
     const data = parse.data;
 
-    // Connect to MongoDB
     await connectToDatabase(getMongoDBConnectionString());
-
-    // Initialize embeddings
-    const embeddings = initializeEmbeddings(getOpenAIApiKey());
-
-    // Get target collection for courses (vector store)
-    const collection = mongoose.connection.collection('courses');
-
-    // Initialize vector store
-    const vectorStore = await initializeVectorStore(
-      collection,
-      embeddings,
-      process.env.COURSE_VECTOR_SEARCH_INDEX_NAME || 'course_vector_index'
-    );
-
-    // Add document with embeddings
-    await createCourseEmbeddings(vectorStore, [data]);
+    await publishCourse(data);
 
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (error: unknown) {

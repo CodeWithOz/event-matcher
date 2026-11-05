@@ -46,3 +46,24 @@ export const getWebhookSecret = (): string => {
 
   return secret;
 };
+
+/**
+ * Get the secret Vercel Cron sends as "Authorization: Bearer <CRON_SECRET>"
+ */
+export const getCronSecret = (): string => {
+  const secret = process.env.CRON_SECRET;
+
+  if (!secret) {
+    throw new Error('CRON_SECRET environment variable is not set');
+  }
+
+  return secret;
+};
+
+/**
+ * Most short courses imported per daily sync run (default 3)
+ */
+export const getCourseSyncMaxImports = (): number => {
+  const value = Number.parseInt(process.env.COURSE_SYNC_MAX_IMPORTS ?? '', 10);
+  return Number.isFinite(value) && value > 0 ? value : 3;
+};

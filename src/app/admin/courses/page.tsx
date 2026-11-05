@@ -114,9 +114,14 @@ export default function AdminCoursesPage() {
                 : `${courses.length} ${courses.length === 1 ? "course" : "courses"}`}
             </span>
           </div>
-          <Link href="/admin/courses/new">
-            <Button>Add New Course</Button>
-          </Link>
+          <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/admin/courses/pending">Pending Courses</Link>
+            </Button>
+            <Link href="/admin/courses/new">
+              <Button>Add New Course</Button>
+            </Link>
+          </div>
         </div>
 
         {error && (

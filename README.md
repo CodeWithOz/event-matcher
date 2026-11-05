@@ -103,3 +103,21 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the application.
+
+## Automatic Short-Course Sync
+
+A daily [Vercel Cron](https://vercel.com/docs/cron-jobs) job (see `vercel.json`) calls `GET /api/cron/sync-courses`, which:
+
+1. Reads the DeepLearning.AI catalog page (`https://www.deeplearning.ai/courses`) and keeps the released courses whose `type` is `short_course` (long courses and specializations are skipped).
+2. Skips courses already published (matched by URL slug or by title) or already queued.
+3. Imports up to `COURSE_SYNC_MAX_IMPORTS` new courses per run (default 3, newest first) with the existing course importer, and stores them in the `pending_courses` collection.
+
+Nothing is published automatically: review the queue at `/admin/courses/pending`, where **Review** opens the course form prefilled with the imported values (**Approve & Publish** creates the course and its embedding) and **Ignore** drops the course for good. Failed imports are retried by the next runs, up to 3 attempts.
+
+Setup on Vercel: set `CRON_SECRET` (generate with `openssl rand -hex 32`) in the project's environment variables; Vercel sends it as `Authorization: Bearer <CRON_SECRET>`. On the Hobby plan, cron jobs run at most once a day, at some point within the scheduled hour.
+
+To run a sync by hand (locally or in production):
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/sync-courses
+```
