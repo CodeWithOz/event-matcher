@@ -5,6 +5,7 @@ import { getMongoDBConnectionString } from '@/lib/utils/env';
 import { PendingCourse } from '@/lib/models/PendingCourse';
 import { CourseInputSchema } from '@/lib/validation/course';
 import { publishCourse } from '@/lib/courses/publish';
+import { isCoursePublished } from '@/lib/courses/duplicates';
 
 // POST /api/admin/courses/pending/[id]/approve - Publish the reviewed course values
 export async function POST(
@@ -34,6 +35,16 @@ export async function POST(
       return NextResponse.json({ error: 'This course was already reviewed' }, { status: 409 });
     }
     claimed = true;
+
+    // The course may have been added by hand since it was queued: publishing it
+    // again would create a duplicate. The entry stays out of the queue.
+    if (await isCoursePublished(parse.data)) {
+      claimed = false;
+      return NextResponse.json(
+        { error: 'This course is already published. It has been removed from the pending queue.' },
+        { status: 409 }
+      );
+    }
 
     await publishCourse(parse.data);
     return NextResponse.json({ success: true }, { status: 201 });

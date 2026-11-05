@@ -114,6 +114,8 @@ A daily [Vercel Cron](https://vercel.com/docs/cron-jobs) job (see `vercel.json`)
 
 Nothing is published automatically: review the queue at `/admin/courses/pending`, where **Review** opens the course form prefilled with the imported values (**Approve & Publish** creates the course and its embedding) and **Ignore** drops the course for good. Failed imports are retried by the next runs, up to 3 attempts.
 
+Ignoring only stops the automatic sync: a course can still be added by hand later. Adding a course by hand also takes it out of the queue (matched by URL slug or title), and approving a queued course that is already published is refused, so a course cannot be published twice.
+
 Setup on Vercel: set `CRON_SECRET` (generate with `openssl rand -hex 32`) in the project's environment variables; Vercel sends it as `Authorization: Bearer <CRON_SECRET>`. On the Hobby plan, cron jobs run at most once a day, at some point within the scheduled hour.
 
 To run a sync by hand (locally or in production):

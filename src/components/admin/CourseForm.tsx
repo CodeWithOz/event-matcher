@@ -285,6 +285,15 @@ export default function CourseForm({
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
+        // Already reviewed or already published: the entry has left the queue, go back to it
+        if (isReview && res.status === 409) {
+          showToast('error', data.error || 'This course was already reviewed');
+          setTimeout(() => {
+            router.push('/admin/courses/pending');
+            router.refresh();
+          }, 2000);
+          return;
+        }
         throw new Error(data.error || `Failed to ${isEdit ? 'update' : 'create'} course`);
       }
 
