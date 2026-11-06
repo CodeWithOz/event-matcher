@@ -1,31 +1,23 @@
 import mongoose from 'mongoose';
 import { PendingCourse } from '@/lib/models/PendingCourse';
-import { normalizeTitle, slugFromUrl } from '@/lib/course-sync/catalog';
+import { courseIdentity, identityFilter } from '@/lib/courses/identity';
+import { ensureCourseIdentity } from '@/lib/courses/ensure-identity';
 
-type CourseIdentity = { url: string; title: string };
-
-/**
- * A course is identified by its URL slug or, to catch slugs renamed on the
- * source site, by its normalized title. The same rule is used by the daily sync.
- */
-function matches(identity: CourseIdentity, other: { url?: unknown; title?: unknown }): boolean {
-  const slug = slugFromUrl(identity.url);
-  const title = normalizeTitle(identity.title);
-  const otherSlug = typeof other.url === 'string' ? slugFromUrl(other.url) : null;
-  const otherTitle = typeof other.title === 'string' ? normalizeTitle(other.title) : '';
-  return (slug !== null && slug === otherSlug) || (title !== '' && title === otherTitle);
-}
+type CourseRef = { url: string; title: string };
 
 /**
- * Whether a published course already has this slug or title.
- * The caller must already be connected to MongoDB.
+ * Whether a published course already has this slug or normalized title.
+ * Runs as one indexed query. The caller must already be connected to MongoDB.
  */
-export async function isCoursePublished(identity: CourseIdentity): Promise<boolean> {
-  const published = await mongoose.connection
+export async function isCoursePublished(course: CourseRef): Promise<boolean> {
+  const filter = identityFilter(courseIdentity(course), 'normalizedTitle');
+  if (!filter) return false;
+  await ensureCourseIdentity();
+
+  const match = await mongoose.connection
     .collection('courses')
-    .find({}, { projection: { url: 1, title: 1 } })
-    .toArray();
-  return published.some((course) => matches(identity, { url: course.url, title: course.title }));
+    .findOne(filter, { projection: { _id: 1 } });
+  return match !== null;
 }
 
 /**
@@ -33,24 +25,13 @@ export async function isCoursePublished(identity: CourseIdentity): Promise<boole
  * course was published another way (e.g. added by hand). Returns how many were
  * resolved. The caller must already be connected to MongoDB.
  */
-export async function resolvePendingForPublishedCourse(identity: CourseIdentity): Promise<number> {
-  const open = await PendingCourse.find(
-    { status: { $in: ['pending', 'failed'] } },
-    { url: 1, catalogTitle: 1, 'importResult.course.title.value': 1 }
-  ).lean();
-
-  const ids = open
-    .filter(
-      (entry) =>
-        matches(identity, { url: entry.url, title: entry.catalogTitle }) ||
-        matches(identity, { url: entry.url, title: entry.importResult?.course?.title?.value })
-    )
-    .map((entry) => entry._id);
-
-  if (ids.length === 0) return 0;
+export async function resolvePendingForPublishedCourse(course: CourseRef): Promise<number> {
+  const filter = identityFilter(courseIdentity(course), 'normalizedTitles');
+  if (!filter) return 0;
+  await ensureCourseIdentity();
 
   const result = await PendingCourse.updateMany(
-    { _id: { $in: ids }, status: { $in: ['pending', 'failed'] } },
+    { status: { $in: ['pending', 'failed'] }, ...filter },
     { $set: { status: 'approved', reviewedAt: new Date() } }
   );
   return result.modifiedCount;

@@ -129,22 +129,3 @@ export async function fetchReleasedShortCourses(): Promise<CatalogEntry[]> {
     (a, b) => (b.releasedAt?.getTime() ?? 0) - (a.releasedAt?.getTime() ?? 0)
   );
 }
-
-/** Last path segment of a course URL, e.g. ".../short-courses/foo/" -> "foo". */
-export function slugFromUrl(url: string): string | null {
-  try {
-    const segments = new URL(url).pathname.split('/').filter(Boolean);
-    return segments.at(-1)?.toLowerCase() ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** Lowercase, punctuation-free title used to spot renamed slugs of the same course. */
-export function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}

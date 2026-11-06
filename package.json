@@ -15,7 +15,8 @@
     "db:up": "docker compose -f docker-compose-local.yml up -d --wait",
     "db:down": "docker compose -f docker-compose-local.yml down",
     "db:reset": "docker compose -f docker-compose-local.yml down -v",
-    "db:init": "ts-node -P tsconfig.scripts.json src/scripts/init-local-db.ts"
+    "db:init": "ts-node -P tsconfig.scripts.json src/scripts/init-local-db.ts",
+    "db:backfill-identity": "ts-node -P tsconfig.scripts.json src/scripts/backfill-course-identity.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.1.1",

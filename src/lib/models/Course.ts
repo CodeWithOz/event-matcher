@@ -28,6 +28,9 @@ export interface IBaseCourse {
 
 // Interface for Course document (extends base interface with Mongoose document fields)
 export interface ICourse extends IBaseCourse, Document {
+  // Identity fields for duplicate checks (see lib/courses/identity), set on every write
+  slug?: string | null;
+  normalizedTitle?: string | null;
   embedding?: Buffer; // Binary data for vector embeddings
   createdAt: Date;
   updatedAt: Date;
@@ -62,6 +65,8 @@ const CourseSchema: Schema = new Schema(
     courseItems: [CourseItemSchema],
     usesCodeExamples: { type: Boolean, default: false },
     url: { type: String, required: true },
+    slug: { type: String, index: true },
+    normalizedTitle: { type: String, index: true },
     embedding: { type: Buffer } // Binary data for vector embeddings
   }, 
   { 

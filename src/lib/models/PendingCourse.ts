@@ -16,6 +16,8 @@ export const MAX_IMPORT_ATTEMPTS = 3;
 
 export interface IPendingCourse extends Document {
   slug: string;
+  /** Normalized catalog and imported titles, for duplicate checks (see lib/courses/identity). */
+  normalizedTitles: string[];
   url: string;
   catalogTitle: string | null;
   releasedAt: Date | null;
@@ -31,6 +33,7 @@ export interface IPendingCourse extends Document {
 const PendingCourseSchema = new Schema<IPendingCourse>(
   {
     slug: { type: String, required: true, unique: true },
+    normalizedTitles: { type: [String], default: [], index: true },
     url: { type: String, required: true },
     catalogTitle: { type: String, default: null },
     releasedAt: { type: Date, default: null },
