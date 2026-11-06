@@ -22,11 +22,39 @@ export type CatalogEntry = {
 const ENTRY_WINDOW = 800;
 
 /**
- * Extract catalog entries from the catalog page HTML.
- * The payload is a JSON string inside a script tag, so quotes are escaped (\").
+ * The course data sits in JavaScript string literals inside script tags
+ * (`self.__next_f.push([1,"..."])`), so it is escaped twice: `\"` for quotes,
+ * `\u0026` for "&", etc. Decode those literals to get the raw payload text.
+ */
+function decodePayload(html: string): string {
+  const literals = html.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g);
+  const chunks: string[] = [];
+  for (const [, literal] of literals) {
+    try {
+      chunks.push(JSON.parse(literal));
+    } catch {
+      // Not valid JSON string syntax: skip this chunk
+    }
+  }
+  // Fallback if the page stops using this format: undo the quote escaping only
+  return chunks.length > 0 ? chunks.join('') : html.replace(/\\"/g, '"');
+}
+
+/** Decode the JSON escapes left in a string value (e.g. \" or \u00e9). */
+function decodeJsonString(raw: string): string {
+  try {
+    return JSON.parse(`"${raw}"`);
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * Extract catalog entries from the catalog page HTML: find each course's
+ * `"slug"` key and read the fields that follow it.
  */
 export function parseCatalog(html: string): CatalogEntry[] {
-  const text = html.replace(/\\"/g, '"');
+  const text = decodePayload(html);
   const entries = new Map<string, CatalogEntry>();
   const slugPattern = /"slug":"([a-z0-9-]+)"/g;
 
@@ -46,7 +74,8 @@ export function parseCatalog(html: string): CatalogEntry[] {
     const comingSoon = window.match(/"comingSoon":(true|false)/)?.[1];
     if (!type || comingSoon === undefined) continue;
 
-    const name = window.match(/^,"name":"((?:[^"\\]|\\.)*)"/)?.[1]?.trim() ?? null;
+    const rawName = window.match(/^,"name":"((?:[^"\\]|\\.)*)"/)?.[1];
+    const name = rawName ? decodeJsonString(rawName).trim() || null : null;
     const releasedRaw = window.match(/"releasedAt":"([^"]+)"/)?.[1];
     const releasedAt = releasedRaw ? new Date(releasedRaw) : null;
 
