@@ -18,8 +18,17 @@ type PendingCourseSummary = {
   createdAt: string;
 };
 
+// Release dates are stored as UTC midnight: format them in UTC, or they show the
+// previous day in time zones behind UTC
 const formatDate = (value: string | null) =>
-  value ? new Date(value).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+  value
+    ? new Date(value).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'UTC',
+      })
+    : '—';
 
 export default function PendingCoursesPage() {
   const [items, setItems] = useState<PendingCourseSummary[]>([]);

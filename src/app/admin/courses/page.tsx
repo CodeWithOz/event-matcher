@@ -105,7 +105,7 @@ export default function AdminCoursesPage() {
     <div className="min-h-screen bg-gray-50">
       <AdminHeader />
       <main className="mx-auto max-w-5xl px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div className="flex items-baseline gap-3">
             <h1 className="text-2xl font-semibold">Courses</h1>
             <span className="text-sm text-gray-600" data-testid="results-count">
@@ -114,7 +114,7 @@ export default function AdminCoursesPage() {
                 : `${courses.length} ${courses.length === 1 ? "course" : "courses"}`}
             </span>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" asChild>
               <Link href="/admin/courses/pending">Pending Courses</Link>
             </Button>
