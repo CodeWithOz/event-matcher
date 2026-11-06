@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AdminHeader from '@/components/admin/AdminHeader';
 import { Button } from '@/components/ui/button';
+import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import type { PendingCourseStatus } from '@/lib/models/PendingCourse';
 
 type PendingCourseSummary = {
@@ -34,7 +35,8 @@ export default function PendingCoursesPage() {
   const [items, setItems] = useState<PendingCourseSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [ignoring, setIgnoring] = useState<string | null>(null);
+  // Course whose "Ignore" confirmation modal is open
+  const [toIgnore, setToIgnore] = useState<PendingCourseSummary | null>(null);
 
   const load = async () => {
     try {
@@ -55,21 +57,12 @@ export default function PendingCoursesPage() {
     load();
   }, []);
 
+  // Throws on failure: the confirmation modal shows the error and stays open
   const ignore = async (item: PendingCourseSummary) => {
-    const title = item.catalogTitle ?? item.slug;
-    if (!confirm(`Ignore "${title}"? It will not be imported again.`)) return;
-
-    try {
-      setIgnoring(item.id);
-      const res = await fetch(`/api/admin/courses/pending/${item.id}/reject`, { method: 'POST' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Failed to ignore course');
-      setItems((prev) => prev.filter((p) => p.id !== item.id));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to ignore course');
-    } finally {
-      setIgnoring(null);
-    }
+    const res = await fetch(`/api/admin/courses/pending/${item.id}/reject`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Failed to ignore course');
+    setItems((prev) => prev.filter((p) => p.id !== item.id));
   };
 
   return (
@@ -130,8 +123,8 @@ export default function PendingCoursesPage() {
                   <Button asChild>
                     <Link href={`/admin/courses/pending/${item.id}`}>Review</Link>
                   </Button>
-                  <Button variant="outline" disabled={ignoring === item.id} onClick={() => ignore(item)}>
-                    {ignoring === item.id ? 'Ignoring…' : 'Ignore'}
+                  <Button variant="outline" onClick={() => setToIgnore(item)}>
+                    Ignore
                   </Button>
                 </div>
               </li>
@@ -139,6 +132,21 @@ export default function PendingCoursesPage() {
           </ul>
         )}
       </main>
+
+      <ConfirmDialog
+        open={toIgnore !== null}
+        onOpenChange={(open) => !open && setToIgnore(null)}
+        title="Ignore this course?"
+        description={
+          <>
+            <span className="font-medium text-foreground">{toIgnore?.catalogTitle ?? toIgnore?.slug}</span> will
+            leave the queue and the daily sync will not import it again. You can still add it by hand later.
+          </>
+        }
+        confirmLabel="Ignore"
+        pendingLabel="Ignoring…"
+        onConfirm={() => (toIgnore ? ignore(toIgnore) : Promise.resolve())}
+      />
     </div>
   );
 }

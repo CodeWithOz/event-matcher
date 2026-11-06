@@ -3,6 +3,7 @@
 import AdminHeader from "@/components/admin/AdminHeader";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { useState, useEffect } from "react";
 import { Course, IBaseCourse } from "@/lib/models/Course";
 
@@ -16,7 +17,8 @@ export default function AdminCoursesPage() {
   const [hasMore, setHasMore] = useState(false);
   const [nextSkip, setNextSkip] = useState<number | null>(0);
   const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
+  // Course whose "Delete" confirmation modal is open
+  const [toDelete, setToDelete] = useState<Course | null>(null);
 
   const loadCourses = async (skip: number = 0, append: boolean = false) => {
     try {
@@ -57,31 +59,20 @@ export default function AdminCoursesPage() {
     }
   };
 
+  // Throws on failure: the confirmation modal shows the error and stays open
   const deleteCourse = async (courseId: string) => {
-    if (!confirm("Are you sure you want to delete this course?")) {
-      return;
+    const response = await fetch(`/api/admin/courses/${courseId}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "Failed to delete course");
     }
 
-    try {
-      setDeleting(courseId);
-
-      const response = await fetch(`/api/admin/courses/${courseId}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to delete course");
-      }
-
-      // Remove the deleted course from the list
-      setCourses((prev) => prev.filter((c) => c.id !== courseId));
-      setTotal((prev) => (prev === null ? null : Math.max(0, prev - 1)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete course");
-    } finally {
-      setDeleting(null);
-    }
+    // Remove the deleted course from the list
+    setCourses((prev) => prev.filter((c) => c.id !== courseId));
+    setTotal((prev) => (prev === null ? null : Math.max(0, prev - 1)));
   };
 
   useEffect(() => {
@@ -158,11 +149,10 @@ export default function AdminCoursesPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => deleteCourse(c.id)}
-                      disabled={deleting === c.id}
+                      onClick={() => setToDelete(c)}
                       className="text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
-                      {deleting === c.id ? "Deleting…" : "Delete"}
+                      Delete
                     </Button>
                   </div>
                 </div>
@@ -182,6 +172,21 @@ export default function AdminCoursesPage() {
           </div>
         )}
       </main>
+
+      <ConfirmDialog
+        open={toDelete !== null}
+        onOpenChange={(open) => !open && setToDelete(null)}
+        title="Delete this course?"
+        description={
+          <>
+            <span className="font-medium text-foreground">{toDelete?.title ?? "This course"}</span> will be
+            permanently removed and will no longer appear in search results. This cannot be undone.
+          </>
+        }
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        onConfirm={() => (toDelete ? deleteCourse(toDelete.id) : Promise.resolve())}
+      />
     </div>
   );
 }
