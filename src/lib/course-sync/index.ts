@@ -4,6 +4,7 @@ import { MAX_IMPORT_ATTEMPTS, PendingCourse, STALE_IMPORT_MS } from '@/lib/model
 import { COURSE_BASE_URL, fetchReleasedShortCourses } from '@/lib/course-sync/catalog';
 import { normalizeTitle } from '@/lib/courses/identity';
 import { ensureCourseIdentity } from '@/lib/courses/ensure-identity';
+import { isDuplicateKeyError } from '@/lib/db/errors';
 
 export type SyncOptions = {
   /** Most courses imported in one run (each import costs an LLM call). */
@@ -45,9 +46,6 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, message: string):
     clearTimeout(timer);
   }
 }
-
-const isDuplicateKeyError = (error: unknown) =>
-  typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 11000;
 
 /**
  * Find released short courses that are neither published nor already queued,
