@@ -6,7 +6,9 @@ import { courseIdentity, normalizeTitle } from './identity';
  * MongoDB has no schema migrations, so documents written before the identity
  * fields existed (see ./identity) are brought up to date by the code itself:
  * the first duplicate check of each server process fills the missing fields
- * and creates the indexes. Every step is idempotent, so there is nothing to
+ * and creates the indexes. Titles with non-ASCII characters are recomputed too,
+ * since an earlier version of normalizeTitle turned accents into spaces; this
+ * rewrites nothing once they are correct. Every step is idempotent, so there is nothing to
  * run before a deploy and nothing breaks if a document is written by older code.
  *
  * No path-alias imports here: the backfill script (ts-node) uses this module too.
@@ -14,13 +16,17 @@ import { courseIdentity, normalizeTitle } from './identity';
 
 const BATCH_SIZE = 500;
 
-async function fillMissing(
+/** Matches strings containing a non-ASCII character (accents, typographic quotes…). */
+const NON_ASCII = /[^\x00-\x7F]/;
+
+async function updateIdentity(
   collectionName: string,
-  missing: Document,
-  projection: Document,
+  outdated: Document,
+  sourceFields: string[],
   toSet: (doc: Document) => Document
 ): Promise<number> {
   const collection = mongoose.connection.collection(collectionName);
+  const projection = Object.fromEntries(sourceFields.map((field) => [field, 1]));
   let ops: AnyBulkWriteOperation[] = [];
   let updated = 0;
 
@@ -31,15 +37,21 @@ async function fillMissing(
     ops = [];
   };
 
-  // Only documents lacking the fields are read, with only the fields needed to compute them
-  for await (const doc of collection.find(missing, { projection })) {
-    // Repeating the "missing" filter skips a document that was saved (with its
-    // own identity fields) after it was read here: its values are newer
-    ops.push({ updateOne: { filter: { _id: doc._id, ...missing }, update: { $set: toSet(doc) } } });
+  // Only documents whose identity may be outdated are read, with only the fields needed to compute it
+  for await (const doc of collection.find(outdated, { projection })) {
+    // The write only applies if the source fields still hold the values read
+    // here: a document saved in the meantime keeps its own, newer identity
+    const unchanged = Object.fromEntries(sourceFields.map((field) => [field, valueAt(doc, field) ?? null]));
+    ops.push({ updateOne: { filter: { _id: doc._id, ...unchanged }, update: { $set: toSet(doc) } } });
     if (ops.length >= BATCH_SIZE) await flush();
   }
   await flush();
   return updated;
+}
+
+/** Value at a dotted path, e.g. "importResult.course.title.value". */
+function valueAt(doc: Document, path: string): unknown {
+  return path.split('.').reduce<unknown>((value, key) => (value as Document | undefined)?.[key], doc);
 }
 
 async function run(): Promise<{ courses: number; pendingCourses: number }> {
@@ -61,21 +73,33 @@ async function run(): Promise<{ courses: number; pendingCourses: number }> {
     { key: { slug: 1 }, name: 'slug_1', unique: true },
   ]);
 
-  const courses = await fillMissing(
+  const courses = await updateIdentity(
     'courses',
-    { $or: [{ slug: { $exists: false } }, { normalizedTitle: { $exists: false } }] },
-    { url: 1, title: 1 },
+    {
+      $or: [
+        { slug: { $exists: false } },
+        { normalizedTitle: { $exists: false } },
+        { title: { $regex: NON_ASCII } },
+      ],
+    },
+    ['url', 'title'],
     (doc) => courseIdentity(doc)
   );
 
-  const pendingCourses = await fillMissing(
+  const pendingCourses = await updateIdentity(
     'pending_courses',
-    { normalizedTitles: { $exists: false } },
-    { catalogTitle: 1, 'importResult.course.title.value': 1 },
+    {
+      $or: [
+        { normalizedTitles: { $exists: false } },
+        { catalogTitle: { $regex: NON_ASCII } },
+        { 'importResult.course.title.value': { $regex: NON_ASCII } },
+      ],
+    },
+    ['catalogTitle', 'importResult.course.title.value'],
     (doc) => ({
       normalizedTitles: [
         ...new Set(
-          [doc.catalogTitle, doc.importResult?.course?.title?.value]
+          [doc.catalogTitle, valueAt(doc, 'importResult.course.title.value')]
             .filter((t): t is string => typeof t === 'string')
             .map(normalizeTitle)
             .filter(Boolean)
@@ -85,7 +109,7 @@ async function run(): Promise<{ courses: number; pendingCourses: number }> {
   );
 
   if (courses > 0 || pendingCourses > 0) {
-    console.info('[course-identity] Filled missing identity fields', { courses, pendingCourses });
+    console.info('[course-identity] Updated course identity fields', { courses, pendingCourses });
   }
   return { courses, pendingCourses };
 }

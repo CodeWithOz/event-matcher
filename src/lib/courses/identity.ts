@@ -23,11 +23,13 @@ export function slugFromUrl(url: string): string | null {
   }
 }
 
-/** Lowercase, accent- and punctuation-free title, e.g. "On-Device AI!" -> "on device ai". */
+/** Lowercase, accent- and punctuation-free title, e.g. "Naïve On-Device AI!" -> "naive on device ai". */
 export function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
     .normalize('NFKD')
+    // NFKD splits "ï" into "i" + a combining mark: drop the mark so it does not become a space
+    .replace(/\p{M}/gu, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 }
