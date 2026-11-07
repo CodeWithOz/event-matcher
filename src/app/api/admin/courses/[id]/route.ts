@@ -4,6 +4,7 @@ import { connectToDatabase } from '@/lib/db/connection';
 import { getMongoDBConnectionString, getOpenAIApiKey } from '@/lib/utils/env';
 import { initializeEmbeddings, generateCourseEmbeddingText } from '@/lib/utils/embeddings';
 import { CourseInputSchema } from '@/lib/validation/course';
+import { courseIdentity } from '@/lib/courses/identity';
 
 // GET /api/admin/courses/[id] - Fetch a single course's editable fields
 export async function GET(
@@ -62,7 +63,7 @@ export async function PUT(
     const collection = mongoose.connection.collection('courses');
     const result = await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
-      { $set: { ...data, content, embedding } }
+      { $set: { ...data, ...courseIdentity(data), content, embedding } }
     );
 
     if (result.matchedCount === 0) {

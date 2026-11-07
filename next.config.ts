@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
     "/api/admin/courses/import": [
       "./src/lib/course-import/ai-extraction/*.md",
     ],
+    "/api/cron/sync-courses": [
+      "./src/lib/course-import/ai-extraction/*.md",
+    ],
   },
 };
 

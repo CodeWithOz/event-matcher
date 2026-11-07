@@ -4,6 +4,7 @@ import { Document as LangChainDocument } from '@langchain/core/documents';
 import { Event, IEvent } from '../models/Event';
 import mongoose from 'mongoose';
 import { IBaseCourse } from '../models/Course';
+import { courseIdentity } from '../courses/identity';
 
 const defaultTextKey = 'content';
 const defaultEmbeddingKey = 'embedding';
@@ -150,7 +151,8 @@ export const createCourseEmbeddings = async (
         // Create a document with structured course text for better embedding
         return new LangChainDocument({
             pageContent: generateCourseEmbeddingText(course),
-            metadata: course, // Include the full course data as metadata
+            // Full course data, plus the indexed identity fields used for duplicate checks
+            metadata: { ...course, ...courseIdentity(course) },
         });
     });
 

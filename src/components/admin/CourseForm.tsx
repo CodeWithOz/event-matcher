@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, useFieldArray, SubmitHandler, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -49,10 +49,23 @@ interface CourseFormProps {
   /** When provided, the form edits this course instead of creating a new one. */
   courseId?: string;
   initialValues?: FormValues;
+  /** When provided, the form reviews this automatically imported course; saving publishes it. */
+  pendingCourseId?: string;
+  /** Import suggestions to apply when the form opens (review of a pending course). */
+  initialImport?: CourseImportResult | null;
+  /** Source URL to prefill when there are no suggestions (e.g. the automatic import failed). */
+  initialImportUrl?: string;
 }
 
-export default function CourseForm({ courseId, initialValues }: CourseFormProps) {
+export default function CourseForm({
+  courseId,
+  initialValues,
+  pendingCourseId,
+  initialImport,
+  initialImportUrl,
+}: CourseFormProps) {
   const isEdit = Boolean(courseId);
+  const isReview = Boolean(pendingCourseId);
   const router = useRouter();
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [importUrl, setImportUrl] = useState('');
@@ -241,9 +254,30 @@ export default function CourseForm({ courseId, initialValues }: CourseFormProps)
 
   const isImporting = importStatus === 'loading';
 
+  // Review of a pending course: apply its stored suggestions once, as if just fetched
+  const appliedInitialImport = useRef(false);
+  useEffect(() => {
+    if (appliedInitialImport.current) return;
+    appliedInitialImport.current = true;
+    if (initialImport) {
+      applyCourseImport(initialImport);
+      // Show missing or invalid suggested fields right away
+      void form.trigger();
+    } else if (initialImportUrl) {
+      setImportUrl(initialImportUrl);
+      form.setValue('url', initialImportUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     try {
-      const res = await fetch(isEdit ? `/api/admin/courses/${courseId}` : '/api/admin/courses', {
+      const endpoint = isReview
+        ? `/api/admin/courses/pending/${pendingCourseId}/approve`
+        : isEdit
+          ? `/api/admin/courses/${courseId}`
+          : '/api/admin/courses';
+      const res = await fetch(endpoint, {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),
@@ -251,7 +285,22 @@ export default function CourseForm({ courseId, initialValues }: CourseFormProps)
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
+        // Already reviewed or already published: the entry has left the queue, go back to it
+        if (isReview && res.status === 409) {
+          showToast('error', data.error || 'This course was already reviewed');
+          setTimeout(() => {
+            router.push('/admin/courses/pending');
+            router.refresh();
+          }, 2000);
+          return;
+        }
         throw new Error(data.error || `Failed to ${isEdit ? 'update' : 'create'} course`);
+      }
+
+      if (isReview) {
+        router.push('/admin/courses/pending');
+        router.refresh();
+        return;
       }
 
       if (isEdit) {
@@ -276,10 +325,14 @@ export default function CourseForm({ courseId, initialValues }: CourseFormProps)
         <CardHeader>
           <div className="flex items-center gap-2 mb-2">
             <Button variant="outline" asChild>
-              <Link href="/admin/courses">← Back to Courses</Link>
+              {isReview ? (
+                <Link href="/admin/courses/pending">← Back to Pending Courses</Link>
+              ) : (
+                <Link href="/admin/courses">← Back to Courses</Link>
+              )}
             </Button>
           </div>
-          <CardTitle>{isEdit ? 'Edit Course' : 'Add New Course'}</CardTitle>
+          <CardTitle>{isReview ? 'Review Imported Course' : isEdit ? 'Edit Course' : 'Add New Course'}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-6">
@@ -590,11 +643,14 @@ export default function CourseForm({ courseId, initialValues }: CourseFormProps)
                 <hr className="border-gray-200" />
 
                 <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={resetForm}>Reset</Button>
+                  {/* Reset would wipe the imported suggestions under review */}
+                  {!isReview && (
+                    <Button type="button" variant="outline" onClick={resetForm}>Reset</Button>
+                  )}
                   <Button type="submit" disabled={!form.formState.isValid || form.formState.isSubmitting} aria-busy={form.formState.isSubmitting}>
                     {form.formState.isSubmitting
-                      ? isEdit ? 'Saving…' : 'Creating…'
-                      : isEdit ? 'Save Changes' : 'Create Course'}
+                      ? isReview ? 'Publishing…' : isEdit ? 'Saving…' : 'Creating…'
+                      : isReview ? 'Approve & Publish' : isEdit ? 'Save Changes' : 'Create Course'}
                   </Button>
                 </div>
               </form>

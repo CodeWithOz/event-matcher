@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/db/connection';
-import { getMongoDBConnectionString, getOpenAIApiKey } from '@/lib/utils/env';
-import { initializeEmbeddings, initializeVectorStore, createCourseEmbeddings } from '@/lib/utils/embeddings';
+import { getMongoDBConnectionString } from '@/lib/utils/env';
+import { publishCourse } from '@/lib/courses/publish';
+import { resolvePendingForPublishedCourse } from '@/lib/courses/duplicates';
 import { CourseInputSchema } from '@/lib/validation/course';
 import type { IBaseCourse } from '@/lib/models/Course';
 
@@ -20,24 +21,23 @@ export async function POST(request: NextRequest) {
 
     const data = parse.data;
 
-    // Connect to MongoDB
     await connectToDatabase(getMongoDBConnectionString());
+    await publishCourse(data);
 
-    // Initialize embeddings
-    const embeddings = initializeEmbeddings(getOpenAIApiKey());
-
-    // Get target collection for courses (vector store)
-    const collection = mongoose.connection.collection('courses');
-
-    // Initialize vector store
-    const vectorStore = await initializeVectorStore(
-      collection,
-      embeddings,
-      process.env.COURSE_VECTOR_SEARCH_INDEX_NAME || 'course_vector_index'
-    );
-
-    // Add document with embeddings
-    await createCourseEmbeddings(vectorStore, [data]);
+    // A course added by hand may also be waiting in the review queue (imported by
+    // the daily sync): take it out so it cannot be approved and published twice.
+    // The course is already created, so a failure here must not fail the request.
+    try {
+      const resolved = await resolvePendingForPublishedCourse(data);
+      if (resolved > 0) {
+        console.info('[course-sync] Removed manually added course from the review queue', {
+          url: data.url,
+          resolved,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to update the review queue after creating a course:', error);
+    }
 
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (error: unknown) {
