@@ -33,7 +33,9 @@ async function fillMissing(
 
   // Only documents lacking the fields are read, with only the fields needed to compute them
   for await (const doc of collection.find(missing, { projection })) {
-    ops.push({ updateOne: { filter: { _id: doc._id }, update: { $set: toSet(doc) } } });
+    // Repeating the "missing" filter skips a document that was saved (with its
+    // own identity fields) after it was read here: its values are newer
+    ops.push({ updateOne: { filter: { _id: doc._id, ...missing }, update: { $set: toSet(doc) } } });
     if (ops.length >= BATCH_SIZE) await flush();
   }
   await flush();
