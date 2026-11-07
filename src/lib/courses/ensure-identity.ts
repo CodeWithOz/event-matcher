@@ -50,7 +50,16 @@ async function run(): Promise<{ courses: number; pendingCourses: number }> {
     { key: { slug: 1 }, name: 'slug_1' },
     { key: { normalizedTitle: 1 }, name: 'normalizedTitle_1' },
   ]);
-  await db.collection('pending_courses').createIndex({ normalizedTitles: 1 }, { name: 'normalizedTitles_1' });
+  await db.collection('pending_courses').createIndexes([
+    { key: { normalizedTitles: 1 }, name: 'normalizedTitles_1' },
+    // The sync relies on this index: its upserts claim one entry per slug, and
+    // a duplicate-key error is how it knows another entry already exists. The
+    // model declares it too, but Mongoose builds model indexes in the
+    // background (and not at all when autoIndex is off), so it is created here
+    // before any sync runs. If duplicate slugs already exist, this fails and
+    // the sync stops with that error rather than adding more.
+    { key: { slug: 1 }, name: 'slug_1', unique: true },
+  ]);
 
   const courses = await fillMissing(
     'courses',
