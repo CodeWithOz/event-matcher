@@ -5,9 +5,13 @@ import { getMongoDBConnectionString } from '@/lib/utils/env';
 import { publishCourse } from '@/lib/courses/publish';
 import { resolvePendingForPublishedCourse } from '@/lib/courses/duplicates';
 import { CourseInputSchema } from '@/lib/validation/course';
+import { isDuplicateKeyError } from '@/lib/db/errors';
+import { ensureCourseIdentity } from '@/lib/courses/ensure-identity';
 import type { IBaseCourse } from '@/lib/models/Course';
 
 type CourseVectorDoc = { _id: mongoose.Types.ObjectId | { toString(): string }; } & IBaseCourse;
+
+const DUPLICATE_URL_MESSAGE = 'A course with this URL is already published.';
 
 // POST /api/admin/courses - Create a new course and generate embeddings
 export async function POST(request: NextRequest) {
@@ -22,7 +26,16 @@ export async function POST(request: NextRequest) {
     const data = parse.data;
 
     await connectToDatabase(getMongoDBConnectionString());
-    await publishCourse(data);
+    // Makes sure the unique slug index exists before inserting
+    await ensureCourseIdentity();
+    try {
+      await publishCourse(data);
+    } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        return NextResponse.json({ error: DUPLICATE_URL_MESSAGE }, { status: 409 });
+      }
+      throw error;
+    }
 
     // A course added by hand may also be waiting in the review queue (imported by
     // the daily sync): take it out so it cannot be approved and published twice.

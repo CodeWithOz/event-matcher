@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isDuplicateKeyError } from '@/lib/db/errors';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/db/connection';
 import { getMongoDBConnectionString, getOpenAIApiKey } from '@/lib/utils/env';
@@ -61,10 +62,19 @@ export async function PUT(
     const embedding = await initializeEmbeddings(getOpenAIApiKey()).embedQuery(content);
 
     const collection = mongoose.connection.collection('courses');
-    const result = await collection.updateOne(
-      { _id: new mongoose.Types.ObjectId(id) },
-      { $set: { ...data, ...courseIdentity(data), content, embedding } }
-    );
+    let result;
+    try {
+      result = await collection.updateOne(
+        { _id: new mongoose.Types.ObjectId(id) },
+        { $set: { ...data, ...courseIdentity(data), content, embedding } }
+      );
+    } catch (error) {
+      // The new URL is that of another published course (unique slug index)
+      if (isDuplicateKeyError(error)) {
+        return NextResponse.json({ error: 'Another course with this URL is already published.' }, { status: 409 });
+      }
+      throw error;
+    }
 
     if (result.matchedCount === 0) {
       return NextResponse.json({ error: 'Course not found' }, { status: 404 });

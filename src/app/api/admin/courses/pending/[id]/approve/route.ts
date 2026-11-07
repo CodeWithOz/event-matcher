@@ -6,6 +6,13 @@ import { PendingCourse, type PendingCourseStatus } from '@/lib/models/PendingCou
 import { CourseInputSchema } from '@/lib/validation/course';
 import { publishCourse } from '@/lib/courses/publish';
 import { isCoursePublished } from '@/lib/courses/duplicates';
+import { isDuplicateKeyError } from '@/lib/db/errors';
+
+const alreadyPublished = () =>
+  NextResponse.json(
+    { error: 'This course is already published. It has been removed from the pending queue.' },
+    { status: 409 }
+  );
 
 // POST /api/admin/courses/pending/[id]/approve - Publish the reviewed course values
 export async function POST(
@@ -42,13 +49,19 @@ export async function POST(
     // again would create a duplicate. The entry stays out of the queue.
     if (await isCoursePublished(parse.data)) {
       claimedFrom = null;
-      return NextResponse.json(
-        { error: 'This course is already published. It has been removed from the pending queue.' },
-        { status: 409 }
-      );
+      return alreadyPublished();
     }
 
-    await publishCourse(parse.data);
+    try {
+      await publishCourse(parse.data);
+    } catch (error) {
+      // Published by another request since the check above (unique slug index)
+      if (isDuplicateKeyError(error)) {
+        claimedFrom = null;
+        return alreadyPublished();
+      }
+      throw error;
+    }
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (error) {
     console.error('Error approving pending course:', error);
