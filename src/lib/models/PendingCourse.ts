@@ -5,14 +5,21 @@ import type { CourseImportResult } from '@/lib/course-import/types';
  * A short course detected on DeepLearning.AI and imported automatically,
  * waiting for an admin to review it before it is published.
  *
+ * - importing: a sync run is importing it right now (see importStartedAt)
  * - pending:  imported, waiting for review
- * - failed:   the import failed; the daily sync retries it (up to MAX_IMPORT_ATTEMPTS)
+ * - failed:   the import failed or was interrupted; the daily sync retries it (up to MAX_IMPORT_ATTEMPTS)
  * - approved: published as a course
  * - rejected: ignored by the admin; never imported again
  */
-export type PendingCourseStatus = 'pending' | 'failed' | 'approved' | 'rejected';
+export type PendingCourseStatus = 'importing' | 'pending' | 'failed' | 'approved' | 'rejected';
 
 export const MAX_IMPORT_ATTEMPTS = 3;
+
+/**
+ * An entry still "importing" after this long belongs to a sync run that was
+ * killed (the function timeout is 5 minutes): the next run marks it failed.
+ */
+export const STALE_IMPORT_MS = 10 * 60 * 1000;
 
 export interface IPendingCourse extends Document {
   slug: string;
@@ -25,6 +32,8 @@ export interface IPendingCourse extends Document {
   importResult: CourseImportResult | null;
   error: string | null;
   attempts: number;
+  /** Start of the current import attempt; identifies the sync run that owns it. */
+  importStartedAt: Date | null;
   reviewedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -40,12 +49,13 @@ const PendingCourseSchema = new Schema<IPendingCourse>(
     status: {
       type: String,
       required: true,
-      enum: ['pending', 'failed', 'approved', 'rejected'],
+      enum: ['importing', 'pending', 'failed', 'approved', 'rejected'],
       index: true,
     },
     importResult: { type: Schema.Types.Mixed, default: null },
     error: { type: String, default: null },
     attempts: { type: Number, default: 0 },
+    importStartedAt: { type: Date, default: null },
     reviewedAt: { type: Date, default: null },
   },
   { timestamps: true, collection: 'pending_courses' }

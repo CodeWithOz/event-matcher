@@ -12,8 +12,11 @@ import {
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
-// Stop starting new imports after this long, so an import in flight can finish
+// Stop starting new imports after this long. A started import is cut off after
+// IMPORT_TIMEOUT_MS, so the run always ends before maxDuration (150 + 90 < 300 s)
+// and records the attempt.
 const IMPORT_BUDGET_MS = 150_000;
+const IMPORT_TIMEOUT_MS = 90_000;
 
 function isAuthorized(request: NextRequest, secret: string): boolean {
   const header = request.headers.get('authorization') ?? '';
@@ -51,6 +54,7 @@ export async function GET(request: NextRequest) {
     const summary = await syncShortCourses({
       maxImports: getCourseSyncMaxImports(),
       deadline: startedAt + IMPORT_BUDGET_MS,
+      importTimeoutMs: IMPORT_TIMEOUT_MS,
     });
 
     console.info('[course-sync] Done', { ...summary, durationMs: Date.now() - startedAt });

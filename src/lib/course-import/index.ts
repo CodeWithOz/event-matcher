@@ -842,6 +842,8 @@ function extractInstructorsFromRoot(
   return instructors;
 }
 
+const LLM_TIMEOUT_MS = 60_000;
+
 async function extractWithLLM(
   context: ExtractionContext
 ): Promise<{ draft: PartialCourseDraft | null; warnings: string[] }> {
@@ -857,6 +859,10 @@ async function extractWithLLM(
   try {
     const llm = new ChatOpenAI({
       model: process.env.LLM_EXTRACTION_MODEL,
+      // Without these, a stalled call can outlive the serverless function
+      // (no timeout by default, and LangChain retries up to 6 times)
+      timeout: LLM_TIMEOUT_MS,
+      maxRetries: 1,
     }).withStructuredOutput(CourseExtractionSchema);
 
     const promptTemplate = ChatPromptTemplate.fromMessages([
