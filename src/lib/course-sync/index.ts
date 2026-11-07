@@ -86,17 +86,24 @@ export async function syncShortCourses(options: SyncOptions): Promise<SyncSummar
     { $set: { status: 'failed', error: 'The import was interrupted before it finished' } }
   );
 
-  const queued = new Map(
-    (await PendingCourse.find({ slug: { $in: slugs } }, { slug: 1, status: 1, attempts: 1 }).lean()).map(
-      (p) => [p.slug, p]
-    )
+  // Queued entries for these courses, matched by slug or by title (an entry
+  // queued or ignored under an older slug must not be imported again)
+  const queued = await PendingCourse.find(
+    { $or: [{ slug: { $in: slugs } }, { normalizedTitles: { $in: titles } }] },
+    { slug: 1, normalizedTitles: 1, status: 1, attempts: 1 }
+  ).lean();
+  const queuedBySlug = new Map(queued.map((p) => [p.slug, p]));
+  const queuedTitles = new Set(
+    queued.filter((p) => p.status !== 'failed').flatMap((p) => p.normalizedTitles ?? [])
   );
 
   const candidates = shortCourses.filter((entry) => {
     if (publishedSlugs.has(entry.slug) || publishedTitles.has(catalogTitle(entry))) return false;
-    const existing = queued.get(entry.slug);
-    if (!existing) return true;
-    return existing.status === 'failed' && existing.attempts < MAX_IMPORT_ATTEMPTS;
+    const existing = queuedBySlug.get(entry.slug);
+    if (existing) return existing.status === 'failed' && existing.attempts < MAX_IMPORT_ATTEMPTS;
+    // Same title under another slug: skip it unless that entry only failed to
+    // import (its old URL may no longer work, so the new slug gets its own try)
+    return !queuedTitles.has(catalogTitle(entry));
   });
 
   const summary: SyncSummary = {
