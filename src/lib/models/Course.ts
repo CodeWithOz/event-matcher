@@ -69,7 +69,11 @@ const CourseSchema: Schema = new Schema(
     // Unique among courses that have a slug (see lib/courses/ensure-identity)
     slug: {
       type: String,
-      index: { unique: true, partialFilterExpression: COURSE_SLUG_INDEX.partialFilterExpression },
+      index: {
+        name: COURSE_SLUG_INDEX.name,
+        unique: true,
+        partialFilterExpression: COURSE_SLUG_INDEX.partialFilterExpression,
+      },
     },
     normalizedTitle: { type: String, index: true },
     embedding: { type: Buffer } // Binary data for vector embeddings

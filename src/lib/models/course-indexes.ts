@@ -4,7 +4,7 @@
  * No path-alias imports: the backfill script (ts-node) uses this module too.
  */
 export const COURSE_SLUG_INDEX = {
-  name: 'slug_1',
+  name: 'slug_unique',
   key: { slug: 1 },
   partialFilterExpression: { slug: { $type: 'string' } },
 } as const;

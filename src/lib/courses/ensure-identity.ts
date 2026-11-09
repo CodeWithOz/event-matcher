@@ -55,30 +55,34 @@ function valueAt(doc: Document, path: string): unknown {
   return path.split('.').reduce<unknown>((value, key) => (value as Document | undefined)?.[key], doc);
 }
 
+/** Non-unique slug index created by earlier versions; replaced by COURSE_SLUG_INDEX. */
+const LEGACY_SLUG_INDEX_NAME = 'slug_1';
+
 /**
  * One published course per slug, enforced by MongoDB so that two requests
  * publishing the same course at once (two approvals, or an approval and a
  * manual add) cannot both succeed. Partial: courses whose URL has no slug
  * (stored as null) are not constrained.
  *
- * Earlier versions created a non-unique index with the same name, which cannot
- * be changed in place: it is dropped first. If two courses already share a
- * slug, creating the index fails with a duplicate-key error naming that slug;
- * remove the duplicate, and the next call creates it.
+ * The unique index has its own name and is created before the legacy one is
+ * dropped. So it can never be dropped by another process doing the same
+ * replacement, and there is no moment without it. createIndex also creates
+ * the collection if it does not exist yet.
+ *
+ * If two courses already share a slug, creating the index fails with a
+ * duplicate-key error naming that slug; remove the duplicate, and the next
+ * call creates it.
  */
 async function ensureUniqueCourseSlugIndex(): Promise<void> {
   const courses = mongoose.connection.collection('courses');
-  const existing = (await courses.indexes()).find((index) => index.name === COURSE_SLUG_INDEX.name);
-  if (existing && !existing.unique) {
-    await courses.dropIndex(COURSE_SLUG_INDEX.name).catch((error) => {
-      // Another process may have dropped it first
-      if ((error as { codeName?: string }).codeName !== 'IndexNotFound') throw error;
-    });
-  }
   await courses.createIndex(COURSE_SLUG_INDEX.key, {
     name: COURSE_SLUG_INDEX.name,
     unique: true,
     partialFilterExpression: COURSE_SLUG_INDEX.partialFilterExpression,
+  });
+  await courses.dropIndex(LEGACY_SLUG_INDEX_NAME).catch((error) => {
+    // Already dropped (by this or another process), or never created
+    if ((error as { codeName?: string }).codeName !== 'IndexNotFound') throw error;
   });
 }
 
