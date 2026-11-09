@@ -6,6 +6,7 @@ import { getMongoDBConnectionString, getOpenAIApiKey } from '@/lib/utils/env';
 import { initializeEmbeddings, generateCourseEmbeddingText } from '@/lib/utils/embeddings';
 import { CourseInputSchema } from '@/lib/validation/course';
 import { courseIdentity } from '@/lib/courses/identity';
+import { ensureCourseIdentity } from '@/lib/courses/ensure-identity';
 
 // GET /api/admin/courses/[id] - Fetch a single course's editable fields
 export async function GET(
@@ -57,6 +58,9 @@ export async function PUT(
     const data = parse.data;
 
     await connectToDatabase(getMongoDBConnectionString());
+    // Makes sure the unique slug index exists, so an edit cannot give this
+    // course the URL of another one
+    await ensureCourseIdentity();
 
     const content = generateCourseEmbeddingText(data);
     const embedding = await initializeEmbeddings(getOpenAIApiKey()).embedQuery(content);
