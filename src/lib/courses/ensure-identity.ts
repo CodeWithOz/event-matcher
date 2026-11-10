@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import type { AnyBulkWriteOperation, Document } from 'mongodb';
 import { courseIdentity, normalizeTitle } from './identity';
+import { COURSE_SLUG_INDEX } from '../models/course-indexes';
 
 /**
  * MongoDB has no schema migrations, so documents written before the identity
@@ -54,12 +55,43 @@ function valueAt(doc: Document, path: string): unknown {
   return path.split('.').reduce<unknown>((value, key) => (value as Document | undefined)?.[key], doc);
 }
 
+/** Non-unique slug index created by earlier versions; replaced by COURSE_SLUG_INDEX. */
+const LEGACY_SLUG_INDEX_NAME = 'slug_1';
+
+/**
+ * One published course per slug, enforced by MongoDB so that two requests
+ * publishing the same course at once (two approvals, or an approval and a
+ * manual add) cannot both succeed. Partial: courses whose URL has no slug
+ * (stored as null) are not constrained.
+ *
+ * The unique index has its own name and is created before the legacy one is
+ * dropped. So it can never be dropped by another process doing the same
+ * replacement, and there is no moment without it. createIndex also creates
+ * the collection if it does not exist yet.
+ *
+ * If two courses already share a slug, creating the index fails with a
+ * duplicate-key error naming that slug; remove the duplicate, and the next
+ * call creates it.
+ */
+async function ensureUniqueCourseSlugIndex(): Promise<void> {
+  const courses = mongoose.connection.collection('courses');
+  await courses.createIndex(COURSE_SLUG_INDEX.key, {
+    name: COURSE_SLUG_INDEX.name,
+    unique: true,
+    partialFilterExpression: COURSE_SLUG_INDEX.partialFilterExpression,
+  });
+  await courses.dropIndex(LEGACY_SLUG_INDEX_NAME).catch((error) => {
+    // Already dropped (by this or another process), or never created
+    if ((error as { codeName?: string }).codeName !== 'IndexNotFound') throw error;
+  });
+}
+
 async function run(): Promise<{ courses: number; pendingCourses: number }> {
   const db = mongoose.connection;
 
   // Indexes first: the "missing field" queries below can then use them
+  await ensureUniqueCourseSlugIndex();
   await db.collection('courses').createIndexes([
-    { key: { slug: 1 }, name: 'slug_1' },
     { key: { normalizedTitle: 1 }, name: 'normalizedTitle_1' },
   ]);
   await db.collection('pending_courses').createIndexes([

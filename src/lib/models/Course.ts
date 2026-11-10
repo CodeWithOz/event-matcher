@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { COURSE_SLUG_INDEX } from './course-indexes';
 
 // Interfaces for nested objects
 export interface IInstructor {
@@ -65,7 +66,15 @@ const CourseSchema: Schema = new Schema(
     courseItems: [CourseItemSchema],
     usesCodeExamples: { type: Boolean, default: false },
     url: { type: String, required: true },
-    slug: { type: String, index: true },
+    // Unique among courses that have a slug (see lib/courses/ensure-identity)
+    slug: {
+      type: String,
+      index: {
+        name: COURSE_SLUG_INDEX.name,
+        unique: true,
+        partialFilterExpression: COURSE_SLUG_INDEX.partialFilterExpression,
+      },
+    },
     normalizedTitle: { type: String, index: true },
     embedding: { type: Buffer } // Binary data for vector embeddings
   }, 
