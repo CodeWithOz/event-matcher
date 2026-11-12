@@ -15,7 +15,6 @@ export default function AdminCoursesPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [total, setTotal] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const [nextSkip, setNextSkip] = useState<number | null>(0);
   const [error, setError] = useState<string | null>(null);
   // Course whose "Delete" confirmation modal is open
   const [toDelete, setToDelete] = useState<Course | null>(null);
@@ -37,14 +36,17 @@ export default function AdminCoursesPage() {
       }
 
       if (append) {
-        setCourses((prev) => [...prev, ...data.courses]);
+        setCourses((prev) => {
+          // A course added or deleted elsewhere can shift the pages: never show one twice
+          const seen = new Set(prev.map((c) => c.id));
+          return [...prev, ...(data.courses as Course[]).filter((c) => !seen.has(c.id))];
+        });
       } else {
         setCourses(data.courses);
       }
 
       setTotal(data.total ?? null);
       setHasMore(data.hasMore);
-      setNextSkip(data.nextSkip);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load courses");
     } finally {
@@ -53,10 +55,10 @@ export default function AdminCoursesPage() {
     }
   };
 
+  // Skip what is already shown rather than the server's nextSkip: deleting a
+  // course shrinks the list, and a stored offset would then skip one course
   const loadMore = () => {
-    if (nextSkip !== null) {
-      loadCourses(nextSkip, true);
-    }
+    loadCourses(courses.length, true);
   };
 
   // Throws on failure: the confirmation modal shows the error and stays open
