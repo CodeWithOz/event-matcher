@@ -46,12 +46,10 @@ export default function PendingCoursesPage() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   // Guards against starting a second request while one is in flight
   const fetchingRef = useRef(false);
-  // Mirrors items.length for the observer callback, which would otherwise read a stale value
-  const loadedCountRef = useRef(0);
-
-  useEffect(() => {
-    loadedCountRef.current = items.length;
-  }, [items.length]);
+  // Server rows consumed so far, kept apart from the number shown: it advances by
+  // every row fetched, duplicates included, so loading always makes progress, and
+  // goes back by one on each ignore so the next page does not skip a course
+  const offsetRef = useRef(0);
 
   const load = useCallback(async (append: boolean) => {
     if (fetchingRef.current) return;
@@ -60,13 +58,14 @@ export default function PendingCoursesPage() {
       if (append) setLoadingMore(true);
       else setLoading(true);
       setError(null);
-      // Skip what is already shown rather than a stored offset: ignoring a course
-      // shrinks the queue, and a stored offset would then skip one course
-      const skip = append ? loadedCountRef.current : 0;
+      const skip = append ? offsetRef.current : 0;
       const res = await fetch(`/api/admin/courses/pending?limit=${PAGE_SIZE}&skip=${skip}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to load pending courses');
       const page: PendingCourseSummary[] = data.pendingCourses ?? [];
+      // Add to the current value: an ignore made while this request was in flight
+      // has already moved it back, and that must not be lost
+      offsetRef.current = (append ? offsetRef.current : 0) + page.length;
       setItems((prev) => {
         if (!append) return page;
         // A course approved elsewhere can shift the pages: never show one twice
@@ -109,6 +108,7 @@ export default function PendingCoursesPage() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Failed to ignore course');
     setItems((prev) => prev.filter((p) => p.id !== item.id));
+    offsetRef.current = Math.max(0, offsetRef.current - 1);
     setTotal((prev) => (prev === null ? null : Math.max(0, prev - 1)));
   };
 
