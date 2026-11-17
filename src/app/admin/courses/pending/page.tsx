@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AdminHeader from '@/components/admin/AdminHeader';
 import { Button } from '@/components/ui/button';
@@ -31,31 +31,76 @@ const formatDate = (value: string | null) =>
       })
     : '—';
 
+const PAGE_SIZE = 20;
+
 export default function PendingCoursesPage() {
   const [items, setItems] = useState<PendingCourseSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [total, setTotal] = useState<number | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Course whose "Ignore" confirmation modal is open
   const [toIgnore, setToIgnore] = useState<PendingCourseSummary | null>(null);
+  // Element at the end of the list: loads the next page when it scrolls into view
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // Guards against starting a second request while one is in flight
+  const fetchingRef = useRef(false);
+  // Server rows consumed so far, kept apart from the number shown: it advances by
+  // every row fetched, duplicates included, so loading always makes progress, and
+  // goes back by one on each ignore so the next page does not skip a course
+  const offsetRef = useRef(0);
 
-  const load = async () => {
+  const load = useCallback(async (append: boolean) => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
     try {
-      setLoading(true);
+      if (append) setLoadingMore(true);
+      else setLoading(true);
       setError(null);
-      const res = await fetch('/api/admin/courses/pending');
+      const skip = append ? offsetRef.current : 0;
+      const res = await fetch(`/api/admin/courses/pending?limit=${PAGE_SIZE}&skip=${skip}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to load pending courses');
-      setItems(data.pendingCourses ?? []);
+      const page: PendingCourseSummary[] = data.pendingCourses ?? [];
+      // Add to the current value: an ignore made while this request was in flight
+      // has already moved it back, and that must not be lost
+      offsetRef.current = (append ? offsetRef.current : 0) + page.length;
+      setItems((prev) => {
+        if (!append) return page;
+        // A course approved elsewhere can shift the pages: never show one twice
+        const seen = new Set(prev.map((p) => p.id));
+        return [...prev, ...page.filter((p) => !seen.has(p.id))];
+      });
+      setTotal(typeof data.total === 'number' ? data.total : null);
+      setHasMore(Boolean(data.hasMore));
     } catch (e) {
+      // The error also pauses automatic loading; the "Load More" button retries
       setError(e instanceof Error ? e.message : 'Failed to load pending courses');
     } finally {
+      fetchingRef.current = false;
       setLoading(false);
+      setLoadingMore(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    load();
-  }, []);
+    load(false);
+  }, [load]);
+
+  // Lazy loading: fetch the next page when the end of the list comes into view
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !hasMore || loading || loadingMore || error) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) load(true);
+      },
+      { rootMargin: '200px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loading, loadingMore, error, load]);
 
   // Throws on failure: the confirmation modal shows the error and stays open
   const ignore = async (item: PendingCourseSummary) => {
@@ -63,14 +108,29 @@ export default function PendingCoursesPage() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Failed to ignore course');
     setItems((prev) => prev.filter((p) => p.id !== item.id));
+    offsetRef.current = Math.max(0, offsetRef.current - 1);
+    setTotal((prev) => (prev === null ? null : Math.max(0, prev - 1)));
   };
+
+  const shown = items.length;
+  const countLabel =
+    total !== null && total > shown
+      ? `Showing ${shown} of ${total} courses`
+      : `${shown} ${shown === 1 ? 'course' : 'courses'}`;
 
   return (
     <div className="min-h-screen bg-gray-50">
       <AdminHeader />
       <main className="mx-auto max-w-5xl px-4 py-8">
-        <div className="flex items-center justify-between mb-2">
-          <h1 className="text-2xl font-semibold">Pending Courses</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-2xl font-semibold">Pending Courses</h1>
+            {!loading && (
+              <span className="text-sm text-gray-600" data-testid="results-count">
+                {countLabel}
+              </span>
+            )}
+          </div>
           <Button variant="outline" asChild>
             <Link href="/admin/courses">← Back to Courses</Link>
           </Button>
@@ -87,7 +147,7 @@ export default function PendingCoursesPage() {
           <div className="flex justify-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
           </div>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && !hasMore ? (
           <div className="p-8 text-center text-gray-600 border rounded-md bg-white">
             No courses waiting for review.
           </div>
@@ -130,6 +190,14 @@ export default function PendingCoursesPage() {
               </li>
             ))}
           </ul>
+        )}
+
+        {!loading && hasMore && (
+          <div ref={sentinelRef} className="flex justify-center pt-4">
+            <Button onClick={() => load(true)} disabled={loadingMore} variant="outline">
+              {loadingMore ? 'Loading…' : 'Load More'}
+            </Button>
+          </div>
         )}
       </main>
 

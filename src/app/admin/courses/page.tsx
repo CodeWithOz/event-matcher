@@ -4,7 +4,7 @@ import AdminHeader from "@/components/admin/AdminHeader";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Course, IBaseCourse } from "@/lib/models/Course";
 
 type Course = { id: string } & Partial<IBaseCourse>;
@@ -15,10 +15,13 @@ export default function AdminCoursesPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [total, setTotal] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const [nextSkip, setNextSkip] = useState<number | null>(0);
   const [error, setError] = useState<string | null>(null);
   // Course whose "Delete" confirmation modal is open
   const [toDelete, setToDelete] = useState<Course | null>(null);
+  // Server rows consumed so far, kept apart from the number shown: it advances by
+  // every row fetched, duplicates included, so "Load More" always makes progress,
+  // and goes back by one on each delete so the next page does not skip a course
+  const offsetRef = useRef(0);
 
   const loadCourses = async (skip: number = 0, append: boolean = false) => {
     try {
@@ -36,15 +39,21 @@ export default function AdminCoursesPage() {
         throw new Error(data.error || "Failed to load courses");
       }
 
+      const page: Course[] = data.courses ?? [];
+      offsetRef.current = (append ? offsetRef.current : 0) + page.length;
+
       if (append) {
-        setCourses((prev) => [...prev, ...data.courses]);
+        setCourses((prev) => {
+          // A course added or deleted elsewhere can shift the pages: never show one twice
+          const seen = new Set(prev.map((c) => c.id));
+          return [...prev, ...page.filter((c) => !seen.has(c.id))];
+        });
       } else {
-        setCourses(data.courses);
+        setCourses(page);
       }
 
       setTotal(data.total ?? null);
       setHasMore(data.hasMore);
-      setNextSkip(data.nextSkip);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load courses");
     } finally {
@@ -54,9 +63,7 @@ export default function AdminCoursesPage() {
   };
 
   const loadMore = () => {
-    if (nextSkip !== null) {
-      loadCourses(nextSkip, true);
-    }
+    loadCourses(offsetRef.current, true);
   };
 
   // Throws on failure: the confirmation modal shows the error and stays open
@@ -72,6 +79,7 @@ export default function AdminCoursesPage() {
 
     // Remove the deleted course from the list
     setCourses((prev) => prev.filter((c) => c.id !== courseId));
+    offsetRef.current = Math.max(0, offsetRef.current - 1);
     setTotal((prev) => (prev === null ? null : Math.max(0, prev - 1)));
   };
 
